@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import type { ChatItem } from '../../../server/shared/types';
 import { describeTool } from '../../../server/shared/tools';
 import { api } from '../api';
+import { t } from '../i18n';
 import { cx } from './ui';
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
@@ -41,7 +42,7 @@ export function AttachmentChips({ fileUrl, files, onRemove }: { fileUrl: (path: 
             )}
             <span className="truncate text-[12px] text-muted">{f.name ?? fileName(f.path)}</span>
             {onRemove && (
-              <button className="ml-1 text-faint hover:text-red-400 cursor-pointer" onClick={() => onRemove(f.path)} title="Прибрати">
+              <button className="ml-1 text-faint hover:text-red-400 cursor-pointer" onClick={() => onRemove(f.path)} title={t('Прибрати')}>
                 ×
               </button>
             )}
@@ -56,11 +57,11 @@ export type Delivery = 'sending' | 'sent' | 'delivered' | 'answered' | 'error';
 
 function Ticks({ state }: { state: Delivery }) {
   const map: Record<Delivery, [string, string, string]> = {
-    sending: ['◷', 'text-faint', 'Надсилається'],
-    sent: ['✓', 'text-faint', 'Надіслано в термінал агента'],
-    delivered: ['✓✓', 'text-sky-400', 'Агент отримав'],
-    answered: ['✓✓', 'text-accent', 'Агент відповів'],
-    error: ['!', 'text-red-400', 'Не вдалося надіслати'],
+    sending: ['◷', 'text-faint', t('Надсилається')],
+    sent: ['✓', 'text-faint', t('Надіслано в термінал агента')],
+    delivered: ['✓✓', 'text-sky-400', t('Агент отримав')],
+    answered: ['✓✓', 'text-accent', t('Агент відповів')],
+    error: ['!', 'text-red-400', t('Не вдалося надіслати')],
   };
   const [glyph, cls, title] = map[state];
   return (
@@ -97,7 +98,7 @@ export function UserBubble({ taskId, text, ts, command, bash, delivery, onRetry 
         <div className="flex items-center justify-end gap-1.5 mt-0.5 pr-1">
           {delivery === 'error' && onRetry && (
             <button className="text-[11px] text-red-400 hover:underline cursor-pointer" onClick={onRetry}>
-              повторити
+              {t('повторити')}
             </button>
           )}
           <span className="text-[10.5px] text-faint">{time(ts)}</span>
@@ -123,7 +124,7 @@ export function Thinking({ text }: { text: string }) {
   return (
     <div className="text-[12px]">
       <button className="text-faint hover:text-muted cursor-pointer italic" onClick={() => setOpen((o) => !o)}>
-        {open ? '▾' : '▸'} думки
+        {open ? '▾' : '▸'} {t('думки')}
       </button>
       {open && <div className="mt-1 pl-3 border-l border-line-2 text-muted whitespace-pre-wrap">{text}</div>}
     </div>
@@ -193,9 +194,9 @@ function ToolDetails({ item }: { item: ToolItem }) {
     case 'TodoWrite':
       body = (
         <ul className="space-y-0.5">
-          {(Array.isArray(i.todos) ? (i.todos as Record<string, unknown>[]) : []).map((t, k) => (
-            <li key={k} className={cx('text-[12.5px]', t.status === 'completed' ? 'text-faint line-through' : t.status === 'in_progress' ? 'text-amber-200' : 'text-muted')}>
-              {t.status === 'completed' ? '☑' : t.status === 'in_progress' ? '◐' : '☐'} {str(t.content)}
+          {(Array.isArray(i.todos) ? (i.todos as Record<string, unknown>[]) : []).map((todo, k) => (
+            <li key={k} className={cx('text-[12.5px]', todo.status === 'completed' ? 'text-faint line-through' : todo.status === 'in_progress' ? 'text-amber-200' : 'text-muted')}>
+              {todo.status === 'completed' ? '☑' : todo.status === 'in_progress' ? '◐' : '☐'} {str(todo.content)}
             </li>
           ))}
         </ul>
@@ -214,7 +215,7 @@ function ToolDetails({ item }: { item: ToolItem }) {
             item.isError ? 'border-red-900/60 bg-red-950/20 text-red-300' : 'border-line bg-panel text-muted',
           )}
         >
-          {item.result || '(порожньо)'}
+          {item.result || t('(порожньо)')}
         </pre>
       )}
     </div>

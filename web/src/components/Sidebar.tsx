@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project, ServerInfo, Task } from '../../../server/shared/types';
 import { CLOSED_STATUSES } from '../../../server/shared/types';
+import { t } from '../i18n';
 import { cx, StatusDot, timeAgo } from './ui';
 
 export function Sidebar({
@@ -43,14 +44,14 @@ export function Sidebar({
           <path d="M12 2.5c.6 3.2-1.4 4.9-2.9 6.6C7.6 10.8 6.5 12.6 6.5 15a5.5 5.5 0 0 0 11 0c0-2.1-.9-3.7-2-5 .1 1.6-.5 2.8-1.6 3.4.4-3.5-.6-7.6-1.9-10.9Z" fill="#f97316" />
           <path d="M12 21a2.9 2.9 0 0 1-2.9-2.9c0-1.6 1.1-2.6 2-3.6.3 1 .9 1.6 1.7 1.9.2-.9.6-1.6 1.2-2.2.6.9 1 1.9 1 3A2.9 2.9 0 0 1 12 21Z" fill="#fde68a" />
         </svg>
-        <span className="font-semibold tracking-tight">Ватра</span>
+        <span className="font-semibold tracking-tight">{t('Ватра')}</span>
         <span
           className={cx('ml-auto text-[11px] font-mono px-1.5 h-5 inline-flex items-center rounded', live >= (info?.maxActive ?? 99) ? 'bg-amber-950/50 text-amber-300' : 'bg-panel-2 text-muted')}
-          title="Активні агенти / ліміт"
+          title={t('Активні агенти / ліміт')}
         >
           {live}/{info?.maxActive ?? '–'}
         </span>
-        <span className={cx('size-2 rounded-full', connected ? 'bg-emerald-500' : 'bg-red-500 pulse-dot')} title={connected ? 'Підключено' : 'Немає звʼязку з сервером'} />
+        <span className={cx('size-2 rounded-full', connected ? 'bg-emerald-500' : 'bg-red-500 pulse-dot')} title={connected ? t('Підключено') : t('Немає звʼязку з сервером')} />
       </div>
 
       {projects.length > 0 && (
@@ -66,14 +67,14 @@ export function Sidebar({
               drafting !== null && selected === null ? 'border-accent/60 bg-accent/10 text-fg' : 'border-line-2 text-muted hover:text-fg hover:border-accent/50',
             )}
           >
-            <span className="text-accent text-[15px] leading-none">+</span> Нова задача
+            <span className="text-accent text-[15px] leading-none">+</span> {t('Нова задача')}
           </button>
           <button
             onClick={onPalette}
             className="mt-1.5 w-full h-7 rounded-md text-[12px] text-faint hover:text-muted hover:bg-panel-2 cursor-pointer flex items-center justify-between px-2.5"
-            title="Пошук по задачах і архіву"
+            title={t('Пошук по задачах і архіву')}
           >
-            <span>⌕ Пошук</span>
+            <span>⌕ {t('Пошук')}</span>
             <span className="font-mono text-[10.5px] border border-line-2 rounded px-1">{navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl K'}</span>
           </button>
         </div>
@@ -81,7 +82,7 @@ export function Sidebar({
 
       {waiting > 0 && (
         <div className="px-4 py-1.5 text-[11px] text-amber-300 bg-amber-950/20 border-b border-line">
-          {waiting} агент(и) чекають на тебе
+          {t('Агентів чекає на тебе: {n}', { n: waiting })}
         </div>
       )}
 
@@ -100,14 +101,14 @@ export function Sidebar({
                 <button
                   className="ml-auto opacity-0 group-hover:opacity-100 text-faint hover:text-fg px-1 cursor-pointer"
                   onClick={() => onProjectSettings(p)}
-                  title="Налаштування проєкту"
+                  title={t('Налаштування проєкту')}
                 >
                   ⚙
                 </button>
                 <button
                   className={cx('px-1 text-[15px] leading-none cursor-pointer', drafting === p.id && selected === null ? 'text-accent' : 'text-muted hover:text-accent')}
                   onClick={() => onNewTask(p)}
-                  title="Нова задача в цьому проєкті"
+                  title={t('Нова задача в цьому проєкті')}
                 >
                   +
                 </button>
@@ -137,12 +138,12 @@ export function Sidebar({
               ))}
               {visible.length === 0 && (
                 <button className="block px-3 py-1 text-[12px] text-faint hover:text-muted cursor-pointer" onClick={() => onNewTask(p)}>
-                  Немає відкритих задач — створити
+                  {t('Немає відкритих задач — створити')}
                 </button>
               )}
               {hidden > 0 && !showClosed && (
                 <button className="block px-3 pt-0.5 text-[11px] text-faint hover:text-muted cursor-pointer" onClick={() => setShowClosed(true)}>
-                  🗄 Архів · {hidden}
+                  🗄 {t('Архів')} · {hidden}
                 </button>
               )}
             </div>
@@ -150,7 +151,7 @@ export function Sidebar({
         })}
         {showClosed && (
           <button className="block px-3 text-[11px] text-faint hover:text-muted cursor-pointer" onClick={() => setShowClosed(false)}>
-            Сховати архів
+            {t('Сховати архів')}
           </button>
         )}
       </nav>
@@ -166,17 +167,17 @@ export function Sidebar({
             className="w-full text-left text-[11px] text-muted hover:text-fg cursor-pointer"
             onClick={() => Notification.requestPermission().then(setNotifPerm)}
           >
-            🔔 Увімкнути сповіщення браузера
+            🔔 {t('Увімкнути сповіщення браузера')}
           </button>
         )}
         <button onClick={onSettings} className="w-full text-left text-[11px] text-muted hover:text-fg cursor-pointer">
-          ⚙ Налаштування
+          ⚙ {t('Налаштування')}
         </button>
         <button
           onClick={onNewProject}
           className="w-full h-8 rounded-md border border-dashed border-line-2 text-[12px] text-muted hover:text-fg hover:border-[#3a4150] cursor-pointer"
         >
-          + Додати проєкт
+          + {t('Додати проєкт')}
         </button>
       </div>
     </aside>

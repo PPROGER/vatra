@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Project } from '../../../server/shared/types';
 import { api } from '../api';
 import { Composer } from './Composer';
+import { t, tk } from '../i18n';
 import { cx, inputCls } from './ui';
 
 const EXAMPLES = [
-  'Додай експорт замовлень у CSV з фільтром за датою',
-  'Знайди, чому падають тести в api/orders, і виправ',
-  '/init — створи CLAUDE.md для цього репозиторію',
-  'Переглянь @src/ і запропонуй, що відрефакторити першим',
+  tk('Додай експорт замовлень у CSV з фільтром за датою'),
+  tk('Знайди, чому падають тести в api/orders, і виправ'),
+  tk('/init — створи CLAUDE.md для цього репозиторію'),
+  tk('Переглянь @src/ і запропонуй, що відрефакторити першим'),
 ];
 
 export function NewTask({
@@ -44,16 +45,16 @@ export function NewTask({
   const create = async (text: string, attachments: { path: string }[]) => {
     setBusy(true);
     try {
-      const t = await api.createTask(project.id, {
+      const created = await api.createTask(project.id, {
         title: title.trim() || undefined,
         prompt: text,
         base_branch: base,
         attachments: attachments.map((a) => a.path),
       });
-      onCreated(t.id);
+      onCreated(created.id);
       return true;
     } catch (e) {
-      toast('error', 'Не вдалося створити задачу', (e as Error).message);
+      toast('error', t('Не вдалося створити задачу'), (e as Error).message);
       return false;
     } finally {
       setBusy(false);
@@ -65,17 +66,17 @@ export function NewTask({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 px-5 h-14 border-b border-line shrink-0">
-        <h1 className="text-[15px] font-semibold">Нова задача</h1>
+        <h1 className="text-[15px] font-semibold">{t('Нова задача')}</h1>
         <div className="flex items-center gap-2 ml-2 text-[12px]">
-          <select className={cx(inputCls, 'h-7 py-0 w-auto')} value={project.id} onChange={(e) => onProject(Number(e.target.value))} title="Проєкт">
+          <select className={cx(inputCls, 'h-7 py-0 w-auto')} value={project.id} onChange={(e) => onProject(Number(e.target.value))} title={t('Проєкт')}>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>
             ))}
           </select>
-          <span className="text-faint">від</span>
-          <select className={cx(inputCls, 'h-7 py-0 w-auto font-mono')} value={base} onChange={(e) => setBase(e.target.value)} title="Базова гілка">
+          <span className="text-faint">{t('від')}</span>
+          <select className={cx(inputCls, 'h-7 py-0 w-auto font-mono')} value={base} onChange={(e) => setBase(e.target.value)} title={t('Базова гілка')}>
             {branchOptions.map((b) => (
               <option key={b}>{b}</option>
             ))}
@@ -83,7 +84,7 @@ export function NewTask({
         </div>
         <input
           className={cx(inputCls, 'h-7 py-0 ml-auto max-w-80')}
-          placeholder="Назва (необовʼязково — з першого рядка)"
+          placeholder={t('Назва (необовʼязково — з першого рядка)')}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
@@ -91,16 +92,16 @@ export function NewTask({
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl px-5 pt-[12vh] pb-6">
-          <div className="text-[20px] font-semibold mb-1.5">Що зробимо в {project.name}?</div>
+          <div className="text-[20px] font-semibold mb-1.5">{t('Що зробимо в {name}?', { name: project.name })}</div>
           <p className="text-muted leading-relaxed mb-6">
-            Напиши задачу як звичайне повідомлення. Ватра створить окрему гілку й worktree від <span className="font-mono text-fg">{base}</span>,
-            запустить там claude і відкриє чат з ним. Можна прикріпити файли, згадати <span className="font-mono text-fg">@файл</span> чи почати з{' '}
-            <span className="font-mono text-fg">/команди</span>.
+            {t('Напиши задачу як звичайне повідомлення. Ватра створить окрему гілку й worktree від')} <span className="font-mono text-fg">{base}</span>
+            {t(', запустить там claude і відкриє чат з ним. Можна прикріпити файли, згадати')} <span className="font-mono text-fg">{t('@файл')}</span>{' '}
+            {t('чи почати з')} <span className="font-mono text-fg">{t('/команди')}</span>.
           </p>
           <div className="grid gap-1.5">
             {EXAMPLES.map((ex) => (
               <div key={ex} className="text-[12.5px] text-faint border border-line rounded-lg px-3 py-2">
-                {ex}
+                {t(ex)}
               </div>
             ))}
           </div>
@@ -112,10 +113,10 @@ export function NewTask({
           scope={scope}
           autoFocus
           disabled={busy}
-          sendLabel={busy ? 'Створюю…' : 'Почати'}
-          placeholder="Опиши задачу для агента…"
-          onSend={(t, a) => create(t, a)}
-          onError={(m) => toast('error', 'Помилка', m)}
+          sendLabel={busy ? t('Створюю…') : t('Почати')}
+          placeholder={t('Опиши задачу для агента…')}
+          onSend={(text, a) => create(text, a)}
+          onError={(m) => toast('error', t('Помилка'), m)}
         />
       </div>
     </div>

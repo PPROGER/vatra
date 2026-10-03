@@ -1,4 +1,5 @@
 // Shared by server and UI — no Node imports here.
+import { tr } from './i18n/index.js';
 
 /** Short human description of a tool call, for status lines and permission cards. */
 export function describeTool(name: string, input: Record<string, unknown> | undefined): string {
@@ -22,9 +23,9 @@ export function describeTool(name: string, input: Record<string, unknown> | unde
       return `WebSearch: ${s('query')}`;
     case 'Task':
     case 'Agent':
-      return `Субагент: ${s('description')}`;
+      return tr('Субагент: {description}', { description: s('description') });
     case 'TodoWrite':
-      return 'Оновлює список задач';
+      return tr('Оновлює список задач');
     default:
       return name;
   }

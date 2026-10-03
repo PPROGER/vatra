@@ -1,5 +1,6 @@
 // Slash commands offered in the chat composer. Everything is typed into the real
 // claude TUI, so any command works — this list only powers autocomplete.
+import { tr, tk } from './shared/i18n/index.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, relative } from 'node:path';
@@ -7,37 +8,37 @@ import type { SlashCommand } from './shared/types.js';
 
 // `interactive` = opens a picker/dialog in the TUI that has to be answered in the terminal.
 const BUILTIN: [string, string, boolean?, string?][] = [
-  ['/compact', 'Стиснути розмову, звільнити контекст', false, '[інструкції]'],
-  ['/clear', 'Почати розмову з чистого аркуша'],
-  ['/context', 'Показати, чим зайнятий контекст'],
-  ['/cost', 'Вартість і токени цієї сесії'],
-  ['/usage', 'Ліміти підписки'],
-  ['/model', 'Змінити модель', true, '[назва]'],
-  ['/init', 'Створити CLAUDE.md для репозиторію'],
-  ['/review', 'Код-ревʼю змін'],
-  ['/security-review', 'Перевірка безпеки змін у гілці'],
-  ['/memory', 'Редагувати CLAUDE.md памʼять', true],
-  ['/rewind', 'Відкотити розмову/код до попередньої точки', true],
-  ['/resume', 'Відновити іншу розмову', true],
-  ['/todos', 'Поточний список задач агента'],
-  ['/status', 'Версія, модель, акаунт'],
-  ['/permissions', 'Правила дозволів', true],
-  ['/agents', 'Керування субагентами', true],
-  ['/mcp', 'MCP сервери', true],
-  ['/hooks', 'Налаштування хуків', true],
-  ['/config', 'Налаштування Claude Code', true],
-  ['/output-style', 'Стиль відповідей', true],
-  ['/add-dir', 'Додати ще одну робочу папку', false, '<шлях>'],
-  ['/export', 'Експорт розмови', true],
-  ['/doctor', 'Діагностика встановлення'],
-  ['/help', 'Довідка'],
-  ['/bug', 'Надіслати баг-репорт', true],
-  ['/release-notes', 'Що нового'],
-  ['/plugin', 'Плагіни', true],
-  ['/login', 'Увійти', true],
-  ['/logout', 'Вийти'],
-  ['/vim', 'Vim-режим вводу'],
-  ['/exit', 'Завершити claude (задача перейде в ревʼю)'],
+  ['/compact', tk('Стиснути розмову, звільнити контекст'), false, tk('[інструкції]')],
+  ['/clear', tk('Почати розмову з чистого аркуша')],
+  ['/context', tk('Показати, чим зайнятий контекст')],
+  ['/cost', tk('Вартість і токени цієї сесії')],
+  ['/usage', tk('Ліміти підписки')],
+  ['/model', tk('Змінити модель'), true, tk('[назва]')],
+  ['/init', tk('Створити CLAUDE.md для репозиторію')],
+  ['/review', tk('Код-ревʼю змін')],
+  ['/security-review', tk('Перевірка безпеки змін у гілці')],
+  ['/memory', tk('Редагувати CLAUDE.md памʼять'), true],
+  ['/rewind', tk('Відкотити розмову/код до попередньої точки'), true],
+  ['/resume', tk('Відновити іншу розмову'), true],
+  ['/todos', tk('Поточний список задач агента')],
+  ['/status', tk('Версія, модель, акаунт')],
+  ['/permissions', tk('Правила дозволів'), true],
+  ['/agents', tk('Керування субагентами'), true],
+  ['/mcp', tk('MCP сервери'), true],
+  ['/hooks', tk('Налаштування хуків'), true],
+  ['/config', tk('Налаштування Claude Code'), true],
+  ['/output-style', tk('Стиль відповідей'), true],
+  ['/add-dir', tk('Додати ще одну робочу папку'), false, tk('<шлях>')],
+  ['/export', tk('Експорт розмови'), true],
+  ['/doctor', tk('Діагностика встановлення')],
+  ['/help', tk('Довідка')],
+  ['/bug', tk('Надіслати баг-репорт'), true],
+  ['/release-notes', tk('Що нового')],
+  ['/plugin', tk('Плагіни'), true],
+  ['/login', tk('Увійти'), true],
+  ['/logout', tk('Вийти')],
+  ['/vim', tk('Vim-режим вводу')],
+  ['/exit', tk('Завершити claude (задача перейде в ревʼю)')],
 ];
 
 function frontmatter(file: string): Record<string, string> {
@@ -81,7 +82,7 @@ function customCommands(dir: string, source: 'project' | 'user'): SlashCommand[]
     const fm = frontmatter(file);
     const rel = relative(dir, file).replace(/\.md$/, '');
     const name = '/' + rel.split('/').join(':');
-    return { name, description: fm.description || (source === 'project' ? 'Команда проєкту' : 'Твоя команда'), source, args: fm['argument-hint'] };
+    return { name, description: fm.description || (source === 'project' ? tr('Команда проєкту') : tr('Твоя команда')), source, args: fm['argument-hint'] };
   });
 }
 
@@ -104,7 +105,13 @@ export function listSlashCommands(worktree: string): SlashCommand[] {
     ...skills(join(worktree, '.claude', 'skills')),
     ...customCommands(join(home, '.claude', 'commands'), 'user'),
     ...skills(join(home, '.claude', 'skills')),
-    ...BUILTIN.map(([name, description, interactive, args]) => ({ name, description, source: 'builtin' as const, interactive: !!interactive, args })),
+    ...BUILTIN.map(([name, description, interactive, args]) => ({
+      name,
+      description: tr(description),
+      source: 'builtin' as const,
+      interactive: !!interactive,
+      args: args && tr(args),
+    })),
   ];
   const seen = new Set<string>();
   return all.filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)));

@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react';
 import type { Project } from '../../../server/shared/types';
 import { api, type RepoInspect } from '../api';
 import { FolderBrowser } from './FolderPicker';
+import { t } from '../i18n';
 import { Button, cx, Field, inputCls, Modal } from './ui';
 
 function MergeModeField({ value, onChange }: { value: 'pr' | 'merge'; onChange: (v: 'pr' | 'merge') => void }) {
   const opts: { v: 'pr' | 'merge'; title: string; hint: string }[] = [
-    { v: 'pr', title: 'Pull request', hint: 'головна кнопка «Створити PR»; задача закривається, коли PR зіллють. «Злити» теж доступне в меню' },
-    { v: 'merge', title: 'Злиття', hint: 'головна кнопка «Злити»: merge у базову гілку, за бажанням одразу push' },
+    { v: 'pr', title: 'Pull request', hint: t('головна кнопка «Створити PR»; задача закривається, коли PR зіллють. «Злити» теж доступне в меню') },
+    { v: 'merge', title: t('Злиття'), hint: t('головна кнопка «Злити»: merge у базову гілку, за бажанням одразу push') },
   ];
   return (
-    <Field label="Як завершувати задачі">
+    <Field label={t('Як завершувати задачі')}>
       <div className="grid grid-cols-2 gap-2">
         {opts.map((o) => (
           <button
@@ -103,38 +104,38 @@ export function NewProjectModal({ onClose, onDone, onError }: { onClose: () => v
   if (browse) return <FolderBrowser start={repo || undefined} onClose={() => setBrowse(false)} onPick={(p) => (setRepo(p), setBrowse(false))} />;
 
   return (
-    <Modal title="Новий проєкт" onClose={onClose} width="max-w-xl">
+    <Modal title={t('Новий проєкт')} onClose={onClose} width="max-w-xl">
       <form onSubmit={submit}>
         <Field
-          label="Репозиторій"
+          label={t('Репозиторій')}
           hint={
             info ? (
               info.isGit ? (
                 <span className="text-emerald-400">
-                  ◆ git · основна гілка {info.defaultBranch}
-                  {info.root && info.root !== info.path ? ` · корінь: ${info.root}` : ''}
+                  ◆ git · {t('основна гілка {branch}', { branch: info.defaultBranch })}
+                  {info.root && info.root !== info.path ? ` · ${t('корінь: {path}', { path: info.root })}` : ''}
                 </span>
               ) : (
-                <span className="text-amber-300">Це не git-репозиторій</span>
+                <span className="text-amber-300">{t('Це не git-репозиторій')}</span>
               )
             ) : (
-              'Обери папку через Finder або вбудований оглядач, чи встав шлях'
+              t('Обери папку через Finder або вбудований оглядач, чи встав шлях')
             )
           }
         >
           <div className="flex gap-1.5">
             <input className={inputCls + ' font-mono'} value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="~/Documents/projects/my-app" autoFocus required />
-            <Button type="button" onClick={pickNative} busy={picking} title="Системний діалог вибору папки">
+            <Button type="button" onClick={pickNative} busy={picking} title={t('Системний діалог вибору папки')}>
               Finder…
             </Button>
-            <Button type="button" onClick={() => setBrowse(true)} title="Вбудований оглядач папок">
-              Огляд…
+            <Button type="button" onClick={() => setBrowse(true)} title={t('Вбудований оглядач папок')}>
+              {t('Огляд…')}
             </Button>
           </div>
         </Field>
         {repos && repos.length > 0 && !repo && (
           <div className="mb-4 -mt-1">
-            <div className="text-[11px] text-faint mb-1.5">Знайдені репозиторії</div>
+            <div className="text-[11px] text-faint mb-1.5">{t('Знайдені репозиторії')}</div>
             <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
               {repos.map((r) => (
                 <button
@@ -150,10 +151,10 @@ export function NewProjectModal({ onClose, onDone, onError }: { onClose: () => v
             </div>
           </div>
         )}
-        <Field label="Назва">
+        <Field label={t('Назва')}>
           <input className={inputCls} value={name} onChange={(e) => (setName(e.target.value), setTouched((t) => ({ ...t, name: true })))} />
         </Field>
-        <Field label="Setup script" hint="Виконується у новому worktree перед стартом агента; вивід видно в терміналі">
+        <Field label="Setup script" hint={t('Виконується у новому worktree перед стартом агента; вивід видно в терміналі')}>
           <input
             className={inputCls + ' font-mono'}
             value={setup}
@@ -161,7 +162,7 @@ export function NewProjectModal({ onClose, onDone, onError }: { onClose: () => v
             placeholder="pnpm install --prefer-offline"
           />
         </Field>
-        <Field label="Файли для копіювання" hint="Невідстежувані файли з основного репо (.env тощо), по одному в рядку">
+        <Field label={t('Файли для копіювання')} hint={t('Невідстежувані файли з основного репо (.env тощо), по одному в рядку')}>
           <textarea
             className={inputCls + ' font-mono h-16 resize-none'}
             value={envFiles}
@@ -171,10 +172,10 @@ export function NewProjectModal({ onClose, onDone, onError }: { onClose: () => v
         <MergeModeField value={mergeMode} onChange={setMergeMode} />
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>
-            Скасувати
+            {t('Скасувати')}
           </Button>
           <Button type="submit" variant="primary" busy={busy} disabled={info ? !info.isGit : false}>
-            Додати проєкт
+            {t('Додати проєкт')}
           </Button>
         </div>
       </form>
@@ -219,7 +220,7 @@ export function ProjectSettingsModal({
   };
 
   const remove = async () => {
-    if (!confirm(`Прибрати проєкт «${project.name}» зі списку Ватри? Сам репозиторій не зачіпається.`)) return;
+    if (!confirm(t('Прибрати проєкт «{name}» зі списку Ватри? Сам репозиторій не зачіпається.', { name: project.name }))) return;
     try {
       await api.deleteProject(project.id);
       onDeleted();
@@ -229,13 +230,13 @@ export function ProjectSettingsModal({
   };
 
   return (
-    <Modal title={`Налаштування · ${project.name}`} onClose={onClose}>
+    <Modal title={`${t('Налаштування')} · ${project.name}`} onClose={onClose}>
       <form onSubmit={save}>
         <div className="mb-3.5 text-[12px] text-muted font-mono break-all">{project.repoPath}</div>
-        <Field label="Назва">
+        <Field label={t('Назва')}>
           <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Основна гілка">
+        <Field label={t('Основна гілка')}>
           <select className={inputCls} value={defaultBranch} onChange={(e) => setDefaultBranch(e.target.value)}>
             {[defaultBranch, ...branches.filter((b) => b !== defaultBranch && !b.startsWith('agent/'))].map((b) => (
               <option key={b}>{b}</option>
@@ -245,20 +246,20 @@ export function ProjectSettingsModal({
         <Field label="Setup script">
           <input className={inputCls + ' font-mono'} value={setup} onChange={(e) => setSetup(e.target.value)} placeholder="pnpm install --prefer-offline" />
         </Field>
-        <Field label="Файли для копіювання">
+        <Field label={t('Файли для копіювання')}>
           <textarea className={inputCls + ' font-mono h-16 resize-none'} value={envFiles} onChange={(e) => setEnvFiles(e.target.value)} />
         </Field>
         <MergeModeField value={mergeMode} onChange={setMergeMode} />
         <div className="flex items-center gap-2 pt-1">
           <Button type="button" variant="danger" onClick={remove}>
-            Прибрати проєкт
+            {t('Прибрати проєкт')}
           </Button>
           <div className="flex-1" />
           <Button type="button" variant="ghost" onClick={onClose}>
-            Скасувати
+            {t('Скасувати')}
           </Button>
           <Button type="submit" variant="primary" busy={busy}>
-            Зберегти
+            {t('Зберегти')}
           </Button>
         </div>
       </form>

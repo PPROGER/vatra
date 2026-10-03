@@ -16,6 +16,7 @@ import type { ServerEvent, ServerInfo } from './shared/types.js';
 import { Tmux } from './tmux.js';
 import { ChatHub } from './transcript.js';
 import { selftest } from './selftest.js';
+import { setLang, tr } from './shared/i18n/index.js';
 import { DiffWatcher } from './watcher.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,7 +42,7 @@ const version = (() => {
 
 async function start(dev: boolean, openUi = false) {
   if (!isSupportedPlatform()) {
-    console.error('Vatra підтримує лише macOS і Linux (Windows — через WSL2).');
+    console.error(tr('Vatra підтримує лише macOS і Linux (Windows — через WSL2).'));
     process.exit(1);
   }
   const paths = getPaths();
@@ -53,16 +54,16 @@ async function start(dev: boolean, openUi = false) {
   const tmux = new Tmux(config.tmuxSocket, paths.tmuxConf);
   const tmuxVersion = await tmux.version();
   if (!tmuxVersion) {
-    console.error('tmux не знайдено. Встанови: brew install tmux  /  sudo apt install tmux');
+    console.error(tr('tmux не знайдено. Встанови: brew install tmux  /  sudo apt install tmux'));
     process.exit(1);
   }
   tmux.writeConf();
   await tmux.reloadConf().catch(() => {});
 
   const [claudeBin, pathEnv] = await Promise.all([resolveClaudeBin(config.claudeBin), loginShellPath()]);
-  if (!claudeBin) warnings.push('claude CLI не знайдено — задачі не зможуть стартувати. Встанови Claude Code або вкажи claudeBin у config.json.');
+  if (!claudeBin) warnings.push(tr('claude CLI не знайдено — задачі не зможуть стартувати. Встанови Claude Code або вкажи claudeBin у config.json.'));
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
-    warnings.push('У середовищі сервера є ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN — для агентів їх буде прибрано, щоб працювала підписка.');
+    warnings.push(tr('У середовищі сервера є ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN — для агентів їх буде прибрано, щоб працювала підписка.'));
   }
 
   const { db, sqlite } = openDb(paths.dbFile);
@@ -112,6 +113,7 @@ async function start(dev: boolean, openUi = false) {
       if (typeof p.idleSleepMinutes === 'number' && p.idleSleepMinutes >= 0 && p.idleSleepMinutes <= 24 * 60) clean.idleSleepMinutes = p.idleSleepMinutes;
       if (typeof p.maxActive === 'number' && Number.isInteger(p.maxActive) && p.maxActive >= 1 && p.maxActive <= 32) clean.maxActive = p.maxActive;
       Object.assign(config, clean);
+      setLang(resolveLanguage(config.language));
       saveConfig(paths, clean);
       await service.dequeue();
       return info();
@@ -127,10 +129,10 @@ async function start(dev: boolean, openUi = false) {
     await app.listen({ host: '127.0.0.1', port: config.port });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-      console.error(`Порт ${config.port} уже зайнятий — мабуть, Ватра вже працює: http://localhost:${config.port}`);
-      console.error('Інший порт: VATRA_PORT=4318 vatra start (або "port" у config.json).');
+      console.error(tr('Порт {port} уже зайнятий — мабуть, Ватра вже працює: http://localhost:{port}', { port: config.port }));
+      console.error(tr('Інший порт: VATRA_PORT=4318 vatra start (або "port" у config.json).'));
     } else {
-      console.error(`Не вдалося зайняти 127.0.0.1:${config.port}: ${(err as Error).message}`);
+      console.error(tr('Не вдалося зайняти 127.0.0.1:{port}: {error}', { port: config.port, error: (err as Error).message }));
     }
     process.exit(1);
   }
@@ -154,13 +156,13 @@ async function start(dev: boolean, openUi = false) {
   setTimeout(() => void service.pollPrs().catch(() => {}), 5000).unref();
 
   const url = dev ? `http://localhost:5173/?token=${token}` : `http://localhost:${config.port}`;
-  console.log(`Ватра (Vatra) ${version} · ${url}`);
-  console.log(`  дані: ${paths.dataDir} · tmux: ${tmuxVersion} (-L ${config.tmuxSocket}) · claude: ${claudeBin ?? '—'}`);
+  console.log(tr('Ватра (Vatra) {version} · {url}', { version, url }));
+  console.log(`  ${tr('дані: {dir} · tmux: {tmux} (-L {socket}) · claude: {claude}', { dir: paths.dataDir, tmux: tmuxVersion, socket: config.tmuxSocket, claude: claudeBin ?? '—' })}`);
   for (const w of warnings) console.warn(`  ! ${w}`);
   if (openUi && !dev) openBrowser(url);
 
   const shutdown = async (sig: string) => {
-    console.log(`\n${sig}: зупиняюсь. Агенти лишаються жити в tmux і підхопляться при наступному старті.`);
+    console.log(`\n${tr('{signal}: зупиняюсь. Агенти лишаються жити в tmux і підхопляться при наступному старті.', { signal: sig })}`);
     hub.closeAll();
     chat.closeAll();
     await watcher.closeAll();
@@ -199,17 +201,17 @@ async function doctor() {
   });
   const claude = await resolveClaudeBin(null);
   check('claude', () => {
-    if (!claude) throw new Error('не знайдено в PATH');
+    if (!claude) throw new Error(tr('не знайдено в PATH'));
     return `${claude} (${sh(claude, ['--version'])})`;
   });
-  check('gh (для PR)', () => sh('gh', ['--version']));
+  check(tr('gh (для PR)'), () => sh('gh', ['--version']));
   check('gh auth', () => {
     execFileSync('gh', ['auth', 'status'], { stdio: 'ignore' });
-    return 'залогінено';
+    return tr('залогінено');
   });
-  if (process.env.ANTHROPIC_API_KEY) console.log('  ! ANTHROPIC_API_KEY задано — сервер прибере його для агентів');
+  if (process.env.ANTHROPIC_API_KEY) console.log(`  ! ${tr('ANTHROPIC_API_KEY задано — сервер прибере його для агентів')}`);
   const paths = getPaths();
-  console.log(`  дані: ${paths.dataDir}`);
+  console.log(`  ${tr('дані: {dir}', { dir: paths.dataDir })}`);
 }
 
 function serviceFiles() {
@@ -262,7 +264,7 @@ function removeLegacyService() {
         /* not loaded */
       }
       rmSync(old, { force: true });
-      console.log(`Прибрано старий автозапуск ${old}`);
+      console.log(tr('Прибрано старий автозапуск {file}', { file: old }));
     } else {
       const old = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'systemd', 'user', 'localdelta.service');
       if (!existsSync(old)) return;
@@ -272,7 +274,7 @@ function removeLegacyService() {
         /* ignore */
       }
       rmSync(old, { force: true });
-      console.log(`Прибрано старий автозапуск ${old}`);
+      console.log(tr('Прибрано старий автозапуск {file}', { file: old }));
     }
   } catch {
     /* best effort */
@@ -285,7 +287,7 @@ function installService() {
   mkdirSync(dirname(file), { recursive: true });
   ensureDirs(getPaths());
   writeFileSync(file, content);
-  console.log(`Записано ${file}`);
+  console.log(tr('Записано {file}', { file }));
   try {
     if (platform === 'darwin') {
       try {
@@ -298,9 +300,9 @@ function installService() {
       execFileSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'inherit' });
       execFileSync('systemctl', ['--user', 'enable', '--now', 'vatra.service'], { stdio: 'inherit' });
     }
-    console.log('Сервіс запущено. UI: http://localhost:4317');
+    console.log(tr('Сервіс запущено. UI: http://localhost:4317'));
   } catch (err) {
-    console.error(`Не вдалося запустити сервіс: ${(err as Error).message}`);
+    console.error(tr('Не вдалося запустити сервіс: {error}', { error: (err as Error).message }));
   }
 }
 
@@ -313,7 +315,7 @@ function uninstallService() {
     /* ignore */
   }
   rmSync(file, { force: true });
-  console.log(`Видалено ${file}. Агенти в tmux (-L vatra) не зачеплено.`);
+  console.log(tr('Видалено {file}. Агенти в tmux (-L vatra) не зачеплено.', { file }));
 }
 
 function serverUrl(): string {
@@ -324,16 +326,16 @@ function serverUrl(): string {
 function openBrowser(url: string) {
   const cmd = platform === 'darwin' ? 'open' : 'xdg-open';
   try {
-    spawn(cmd, [url], { detached: true, stdio: 'ignore' }).on('error', () => console.log(`Відкрий у браузері: ${url}`)).unref();
+    spawn(cmd, [url], { detached: true, stdio: 'ignore' }).on('error', () => console.log(tr('Відкрий у браузері: {url}', { url }))).unref();
   } catch {
-    console.log(`Відкрий у браузері: ${url}`);
+    console.log(tr('Відкрий у браузері: {url}', { url }));
   }
 }
 
 /** git pull + install + build in the install directory, then restart the service if there is one. */
 function update() {
   if (!existsSync(join(pkgRoot, '.git'))) {
-    console.error(`${pkgRoot} — не git-клон, оновлюй тим самим способом, яким встановлював.`);
+    console.error(tr('{dir} — не git-клон, оновлюй тим самим способом, яким встановлював.', { dir: pkgRoot }));
     process.exit(1);
   }
   const run = (cmd: string, args: string[]) => {
@@ -348,20 +350,22 @@ function update() {
     try {
       if (platform === 'darwin') execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid?.() ?? 501}/dev.vatra`], { stdio: 'inherit' });
       else execFileSync('systemctl', ['--user', 'restart', 'vatra.service'], { stdio: 'inherit' });
-      console.log('Сервіс перезапущено.');
+      console.log(tr('Сервіс перезапущено.'));
     } catch {
-      console.log('Перезапусти сервер вручну, щоб підхопити нову версію.');
+      console.log(tr('Перезапусти сервер вручну, щоб підхопити нову версію.'));
     }
   } else {
-    console.log('Готово. Перезапусти `vatra start`, якщо сервер зараз працює.');
+    console.log(tr('Готово. Перезапусти `vatra start`, якщо сервер зараз працює.'));
   }
 }
 
-const HELP = `Ватра (vatra) ${version} — паралельні агенти Claude Code в git worktrees
+const help = () =>
+  tr(
+    `Ватра (vatra) {version} — паралельні агенти Claude Code в git worktrees
 
 Використання: vatra <команда>
 
-  start [--open]       запустити сервер (UI на ${'http://localhost:4317'}); --open відкриє браузер
+  start [--open]       запустити сервер (UI на {url}); --open відкриє браузер
   open                 відкрити UI в браузері
   doctor               перевірити git, tmux, claude, gh і нативні модулі
   selftest [--keep]    прогнати справжнього claude через запущену Ватру (довіра, хуки, дозволи, чат)
@@ -370,12 +374,22 @@ const HELP = `Ватра (vatra) ${version} — паралельні агент�
   uninstall-service    прибрати автозапуск
   url                  надрукувати адресу UI
   version              версія
-`;
+`,
+    { version, url: 'http://localhost:4317' },
+  );
 
 const [cmd = 'start', ...rest] = process.argv.slice(2);
+// language for every command's output; a missing config.json is created with defaults
+try {
+  const paths = getPaths();
+  mkdirSync(paths.dataDir, { recursive: true, mode: 0o700 });
+  setLang(resolveLanguage(loadConfig(paths).language));
+} catch {
+  setLang(resolveLanguage('auto'));
+}
 const [major] = process.versions.node.split('.').map(Number);
 if (major < 22) {
-  console.error(`Потрібен Node.js 22+, зараз ${process.version}.`);
+  console.error(tr('Потрібен Node.js 22+, зараз {version}.', { version: process.version }));
   process.exit(1);
 }
 switch (cmd) {
@@ -410,9 +424,9 @@ switch (cmd) {
   case 'help':
   case '--help':
   case '-h':
-    console.log(HELP);
+    console.log(help());
     break;
   default:
-    console.log(HELP);
+    console.log(help());
     process.exit(1);
 }

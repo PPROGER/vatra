@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TaskStatus } from '../../../server/shared/types';
+import { t, tk } from '../i18n';
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(' ');
@@ -36,16 +37,16 @@ export function Button({
 }
 
 export const STATUS_META: Record<TaskStatus, { label: string; dot: string; text: string; pulse?: boolean }> = {
-  creating: { label: 'створюється', dot: 'bg-sky-400', text: 'text-sky-300', pulse: true },
-  queued: { label: 'в черзі', dot: 'bg-slate-400', text: 'text-slate-300' },
-  running: { label: 'працює', dot: 'bg-emerald-400', text: 'text-emerald-300', pulse: true },
-  idle: { label: 'чекає', dot: 'bg-amber-400', text: 'text-amber-300' },
-  review: { label: 'ревʼю', dot: 'bg-violet-400', text: 'text-violet-300' },
-  sleeping: { label: 'спить', dot: 'bg-indigo-400/70', text: 'text-indigo-300' },
-  merged: { label: 'злито', dot: 'bg-emerald-700', text: 'text-emerald-500' },
-  discarded: { label: 'відкинуто', dot: 'bg-zinc-600', text: 'text-zinc-500' },
-  done: { label: 'завершено', dot: 'bg-sky-700', text: 'text-sky-400' },
-  error: { label: 'помилка', dot: 'bg-red-500', text: 'text-red-400' },
+  creating: { label: tk('створюється'), dot: 'bg-sky-400', text: 'text-sky-300', pulse: true },
+  queued: { label: tk('в черзі'), dot: 'bg-slate-400', text: 'text-slate-300' },
+  running: { label: tk('працює'), dot: 'bg-emerald-400', text: 'text-emerald-300', pulse: true },
+  idle: { label: tk('чекає'), dot: 'bg-amber-400', text: 'text-amber-300' },
+  review: { label: tk('ревʼю'), dot: 'bg-violet-400', text: 'text-violet-300' },
+  sleeping: { label: tk('спить'), dot: 'bg-indigo-400/70', text: 'text-indigo-300' },
+  merged: { label: tk('злито'), dot: 'bg-emerald-700', text: 'text-emerald-500' },
+  discarded: { label: tk('відкинуто'), dot: 'bg-zinc-600', text: 'text-zinc-500' },
+  done: { label: tk('завершено'), dot: 'bg-sky-700', text: 'text-sky-400' },
+  error: { label: tk('помилка'), dot: 'bg-red-500', text: 'text-red-400' },
 };
 
 export function StatusDot({ status }: { status: TaskStatus }) {
@@ -58,7 +59,7 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
   return (
     <span className={cx('inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-panel-2 border border-line text-[11px]', m.text)}>
       <StatusDot status={status} />
-      {m.label}
+      {t(m.label)}
     </span>
   );
 }
@@ -74,7 +75,7 @@ export function Modal({ title, onClose, children, width = 'max-w-lg' }: { title:
       <div className={cx('w-full rounded-xl border border-line-2 bg-panel shadow-2xl', width)} onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 h-11 border-b border-line">
           <h2 className="text-[13px] font-semibold">{title}</h2>
-          <button className="text-muted hover:text-fg text-lg leading-none cursor-pointer" onClick={onClose} aria-label="Закрити">
+          <button className="text-muted hover:text-fg text-lg leading-none cursor-pointer" onClick={onClose} aria-label={t('Закрити')}>
             ×
           </button>
         </div>
@@ -186,17 +187,17 @@ export interface Toast {
 export function Toasts({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: number) => void }) {
   return (
     <div className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 w-96 max-w-[calc(100vw-2rem)]">
-      {toasts.map((t) => (
+      {toasts.map((toast) => (
         <div
-          key={t.id}
+          key={toast.id}
           className={cx(
             'rounded-lg border bg-panel-2 px-3.5 py-2.5 shadow-xl cursor-pointer',
-            t.kind === 'error' ? 'border-red-900/70' : t.kind === 'success' ? 'border-emerald-900/70' : 'border-line-2',
+            toast.kind === 'error' ? 'border-red-900/70' : toast.kind === 'success' ? 'border-emerald-900/70' : 'border-line-2',
           )}
-          onClick={() => dismiss(t.id)}
+          onClick={() => dismiss(toast.id)}
         >
-          <div className={cx('text-[12px] font-medium', t.kind === 'error' ? 'text-red-300' : t.kind === 'success' ? 'text-emerald-300' : 'text-fg')}>{t.title}</div>
-          {t.body && <div className="text-[12px] text-muted mt-0.5 whitespace-pre-wrap break-words">{t.body}</div>}
+          <div className={cx('text-[12px] font-medium', toast.kind === 'error' ? 'text-red-300' : toast.kind === 'success' ? 'text-emerald-300' : 'text-fg')}>{toast.title}</div>
+          {toast.body && <div className="text-[12px] text-muted mt-0.5 whitespace-pre-wrap break-words">{toast.body}</div>}
         </div>
       ))}
     </div>
@@ -206,8 +207,8 @@ export function Toasts({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: num
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return '';
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'щойно';
-  if (s < 3600) return `${Math.floor(s / 60)} хв`;
-  if (s < 86400) return `${Math.floor(s / 3600)} год`;
-  return `${Math.floor(s / 86400)} д`;
+  if (s < 60) return t('щойно');
+  if (s < 3600) return t('{n} хв', { n: Math.floor(s / 60) });
+  if (s < 86400) return t('{n} год', { n: Math.floor(s / 3600) });
+  return t('{n} д', { n: Math.floor(s / 86400) });
 }

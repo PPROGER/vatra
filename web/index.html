@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 4 29 27H3z' fill='none' stroke='%2334d399' stroke-width='3' stroke-linejoin='round'/></svg>" />
     <title>Ватра</title>
+    <script>
+      // Guess the UI language before the app loads (same rule as App.tsx) to avoid a flash.
+      (function () {
+        var l;
+        try { l = localStorage.getItem('vatra-lang'); } catch (e) {}
+        if (l !== 'uk' && l !== 'en') l = /^(uk|ru)\b/i.test(navigator.language || '') ? 'uk' : 'en';
+        document.documentElement.lang = l;
+        if (l === 'en') document.title = 'Vatra';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

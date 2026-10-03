@@ -39,6 +39,9 @@ if [ -t 1 ]; then
 else
   B=''; DIM=''; R=''; G=''; Y=''; O=''; N=''
 fi
+# Ukrainian for uk/ru locales, English otherwise (or VATRA_LANG=uk|en)
+case "${VATRA_LANG:-${LC_ALL:-${LANG:-}}}" in uk*|ru*) UK=1 ;; *) UK=0 ;; esac
+L() { if [ "$UK" = 1 ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n%s▸ %s%s\n' "$O$B" "$*" "$N"; }
 ok()   { printf '  %s✓%s %s\n' "$G" "$N" "$*"; }
@@ -57,14 +60,14 @@ ask() {
   case "$answer" in y|Y|yes|так|Так) return 0 ;; *) return 1 ;; esac
 }
 
-say "${O}${B}🔥 Ватра${N} ${DIM}— паралельні агенти Claude Code в git worktrees${N}"
+say "${O}${B}🔥 $(L "Ватра" "Vatra")${N} ${DIM}— $(L "паралельні агенти Claude Code в git worktrees" "parallel Claude Code agents in git worktrees")${N}"
 
 # ------------------------------------------------------------------ platform
 OS="$(uname -s)"
 case "$OS" in
   Darwin) PLATFORM=mac ;;
   Linux)  PLATFORM=linux ;;
-  *) die "Підтримуються macOS і Linux (Windows — через WSL2). Зараз: $OS" ;;
+  *) die "$(L "Підтримуються macOS і Linux (Windows — через WSL2). Зараз: $OS" "Only macOS and Linux are supported (Windows via WSL2). This is: $OS")" ;;
 esac
 
 PM=""
@@ -97,16 +100,16 @@ need_pkg() {
   case "$PM" in
     brew) pkg="$3" ;; apt-get) pkg="$4" ;; dnf) pkg="$5" ;; pacman) pkg="$6" ;; zypper) pkg="$7" ;;
   esac
-  if [ "$DEPS" = 1 ] && [ -n "$pkg" ] && ask "Немає $name. Встановити через $PM ($pkg)?"; then
-    pkg_install "$pkg" || die "Не вдалося встановити $name"
-    if have "$cmd"; then ok "$name"; else die "$name так і не зʼявився в PATH"; fi
+  if [ "$DEPS" = 1 ] && [ -n "$pkg" ] && ask "$(L "Немає $name. Встановити через $PM ($pkg)?" "$name is missing. Install it with $PM ($pkg)?")"; then
+    pkg_install "$pkg" || die "$(L "Не вдалося встановити $name" "Could not install $name")"
+    if have "$cmd"; then ok "$name"; else die "$(L "$name так і не зʼявився в PATH" "$name is still not on PATH")"; fi
   else
-    die "Потрібен $name. Встанови його${pkg:+ ($PM: $pkg)} і запусти інсталятор ще раз."
+    die "$(L "Потрібен $name. Встанови його${pkg:+ ($PM: $pkg)} і запусти інсталятор ще раз." "$name is required. Install it${pkg:+ ($PM: $pkg)} and run the installer again.")"
   fi
 }
 
 # ------------------------------------------------------------------ dependencies
-step "Перевіряю залежності"
+step "$(L "Перевіряю залежності" "Checking dependencies")"
 
 need_pkg git  "git"  git git git git git
 need_pkg tmux "tmux" tmux tmux tmux tmux tmux
@@ -116,66 +119,65 @@ need_pkg curl "curl" curl curl curl curl curl
 if [ "$PLATFORM" = mac ]; then
   if xcode-select -p >/dev/null 2>&1; then ok "Xcode Command Line Tools"
   else
-    warn "Немає Xcode Command Line Tools — відкриваю встановлення. Після завершення запусти інсталятор ще раз."
+    warn "$(L "Немає Xcode Command Line Tools — відкриваю встановлення. Після завершення запусти інсталятор ще раз." "Xcode Command Line Tools are missing — opening the installer. Run this script again when it finishes.")"
     xcode-select --install || true
     exit 1
   fi
 else
   need_pkg python3 "python3" python3 python3 python3 python python3
   need_pkg make "make" make build-essential make base-devel make
-  need_pkg g++ "C++ компілятор" gcc build-essential gcc-c++ base-devel gcc-c++
+  need_pkg g++ "$(L "C++ компілятор" "C++ compiler")" gcc build-essential gcc-c++ base-devel gcc-c++
 fi
 
 # Node.js 22+
 node_major() { node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
 if ! have node || [ "$(node_major)" -lt 22 ]; then
-  current="$(have node && node -v || echo 'немає')"
-  if [ "$PM" = brew ] && [ "$DEPS" = 1 ] && ask "Потрібен Node.js 22+ (зараз: $current). Встановити через brew?"; then
+  if have node; then current="$(node -v)"; else current="$(L 'немає' 'none')"; fi
+  if [ "$PM" = brew ] && [ "$DEPS" = 1 ] && ask "$(L "Потрібен Node.js 22+ (зараз: $current). Встановити через brew?" "Node.js 22+ is required (found: $current). Install it with brew?")"; then
     brew install node
   elif [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
-    warn "Потрібен Node.js 22+ (зараз: $current) — ставлю через nvm"
+    warn "$(L "Потрібен Node.js 22+ (зараз: $current) — ставлю через nvm" "Node.js 22+ is required (found: $current) — installing with nvm")"
     # shellcheck disable=SC1091
     . "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
     nvm install 22 >/dev/null
     nvm use 22 >/dev/null
   else
-    die "Потрібен Node.js 22+ (зараз: $current).
-    Найпростіше через nvm:
+    die "$(L "Потрібен Node.js 22+ (зараз: $current). Найпростіше через nvm:" "Node.js 22+ is required (found: $current). The easiest way is nvm:")
       curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
       nvm install 22
-    і запусти інсталятор ще раз."
+    $(L "і запусти інсталятор ще раз." "then run this installer again.")"
   fi
 fi
 ok "Node.js $(node -v)"
-have corepack || die "Немає corepack (йде разом з Node.js 22). Перевстанови Node.js."
-ok "corepack (pnpm буде завантажено автоматично)"
+have corepack || die "$(L "Немає corepack (йде разом з Node.js 22). Перевстанови Node.js." "corepack is missing (it ships with Node.js 22). Reinstall Node.js.")"
+ok "$(L "corepack (pnpm буде завантажено автоматично)" "corepack (pnpm is downloaded automatically)")"
 
 # ------------------------------------------------------------------ source
-step "Код → $DIR"
+step "$(L "Код" "Source") → $DIR"
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" fetch --quiet origin "$BRANCH"
   git -C "$DIR" checkout --quiet "$BRANCH"
   git -C "$DIR" pull --quiet --ff-only origin "$BRANCH"
-  ok "оновлено ($(git -C "$DIR" rev-parse --short HEAD))"
+  ok "$(L "оновлено" "updated") ($(git -C "$DIR" rev-parse --short HEAD))"
 elif [ -e "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
-  die "$DIR уже існує і це не git-клон Ватри. Вкажи іншу папку: --dir <шлях>"
+  die "$(L "$DIR уже існує і це не git-клон Ватри. Вкажи іншу папку: --dir <шлях>" "$DIR already exists and is not a Vatra clone. Choose another folder: --dir <path>")"
 else
   git clone --quiet --branch "$BRANCH" "$REPO" "$DIR"
-  ok "склоновано ($(git -C "$DIR" rev-parse --short HEAD))"
+  ok "$(L "склоновано" "cloned") ($(git -C "$DIR" rev-parse --short HEAD))"
 fi
 
 # ------------------------------------------------------------------ build
-step "Встановлюю залежності і збираю"
+step "$(L "Встановлюю залежності і збираю" "Installing dependencies and building")"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 (
   cd "$DIR"
   corepack pnpm install --frozen-lockfile
   corepack pnpm build
-) || die "Збірка не вдалася. Вивід вище; найчастіше бракує компілятора (див. README → Troubleshooting)."
-ok "зібрано"
+) || die "$(L "Збірка не вдалася. Вивід вище; найчастіше бракує компілятора (див. README → Troubleshooting)." "The build failed. See the output above; usually a compiler is missing (README → Troubleshooting).")"
+ok "$(L "зібрано" "built")"
 
 # ------------------------------------------------------------------ command
-step "Команда vatra → $BIN_DIR/vatra"
+step "$(L "Команда" "Command") vatra → $BIN_DIR/vatra"
 mkdir -p "$BIN_DIR"
 NODE_BIN="$(command -v node)"
 cat > "$BIN_DIR/vatra" <<EOF
@@ -190,7 +192,7 @@ case ":$PATH:" in
   *)
     SHELL_RC="$HOME/.profile"
     case "${SHELL:-}" in */zsh) SHELL_RC="$HOME/.zshrc" ;; */bash) SHELL_RC="$HOME/.bashrc" ;; esac
-    warn "$BIN_DIR немає в PATH. Додай у $SHELL_RC:"
+    warn "$(L "$BIN_DIR немає в PATH. Додай у $SHELL_RC:" "$BIN_DIR is not on your PATH. Add this to $SHELL_RC:")"
     say  "      export PATH=\"$BIN_DIR:\$PATH\""
     ;;
 esac
@@ -199,27 +201,27 @@ esac
 step "Claude Code"
 if have claude; then
   ok "claude $(claude --version 2>/dev/null | head -1)"
-  say "  ${DIM}Якщо ще не входив: запусти ${N}claude${DIM} і виконай ${N}/login${DIM} (підписка Pro/Max).${N}"
+  say "  ${DIM}$(L "Якщо ще не входив: запусти" "If you haven't yet: run") ${N}claude${DIM} $(L "і виконай" "and do") ${N}/login${DIM} $(L "(підписка Pro/Max)." "(Pro/Max plan).")${N}"
 else
-  warn "claude не знайдено. Встанови Claude Code:"
+  warn "$(L "claude не знайдено. Встанови Claude Code:" "claude not found. Install Claude Code:")"
   say  "      npm install -g @anthropic-ai/claude-code"
-  say  "    потім запусти claude і виконай /login"
+  say  "    $(L "потім запусти claude і виконай /login" "then run claude and do /login")"
 fi
-if have gh; then ok "gh (для PR)"; else warn "gh не встановлено — PR відкриватимуться через сторінку GitHub (необовʼязково: brew install gh / apt install gh, потім gh auth login)"; fi
+if have gh; then ok "gh ($(L "для PR" "for PRs"))"; else warn "$(L "gh не встановлено — PR відкриватимуться через сторінку GitHub (необовʼязково: brew install gh / apt install gh, потім gh auth login)" "gh is not installed — PRs will open via the GitHub page (optional: brew install gh / apt install gh, then gh auth login)")"; fi
 
 # ------------------------------------------------------------------ run
 if [ "$SERVICE" = 1 ]; then
-  step "Автозапуск"
+  step "$(L "Автозапуск" "Background service")"
   "$BIN_DIR/vatra" install-service
 fi
 
 say ""
-say "${G}${B}Готово.${N}"
+say "${G}${B}$(L "Готово." "Done.")${N}"
 if [ "$SERVICE" = 1 ]; then
-  say "  Ватра працює у фоні: ${B}http://localhost:4317${N}  (vatra open)"
+  say "  $(L "Ватра працює у фоні:" "Vatra is running in the background:") ${B}http://localhost:4317${N}  (vatra open)"
 else
-  say "  Запуск:      ${B}vatra start --open${N}"
-  say "  У фоні:      ${B}vatra install-service${N}"
+  say "  $(L "Запуск:     " "Start:      ") ${B}vatra start --open${N}"
+  say "  $(L "У фоні:     " "Background: ") ${B}vatra install-service${N}"
 fi
-say "  Оновлення:   ${B}vatra update${N}"
-say "  Перевірка:   ${B}vatra doctor${N}"
+say "  $(L "Оновлення:  " "Update:     ") ${B}vatra update${N}"
+say "  $(L "Перевірка:  " "Check:      ") ${B}vatra doctor${N}  ·  vatra selftest"

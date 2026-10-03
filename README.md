@@ -8,7 +8,7 @@ Vatra (Ukrainian for *campfire*) is a local web dashboard for running several **
 - Uses the official `claude` CLI in interactive mode, so it runs on your Claude Pro/Max subscription. It doesn't use `claude -p` or the Agent SDK.
 - Isolation is file-level only (worktree + branch); agents run as your user.
 
-> The UI is currently in Ukrainian.
+> The UI, server messages and CLI are in English and Ukrainian. By default the language follows your system locale; change it under ⚙ Settings in the sidebar (or `"language": "en"` in `config.json`).
 
 ## Install
 
@@ -109,6 +109,8 @@ ssh -N -L 4317:localhost:4317 user@host
   "claudeBin": null,
   "claudeArgs": [],
   "contextWindow": 1000000,
+  "idleSleepMinutes": 30,
+  "language": "auto",
   "tmuxSocket": "vatra"
 }
 ```
@@ -117,6 +119,8 @@ ssh -N -L 4317:localhost:4317 user@host
 - `portRange`: each task gets its own `PORT` env var so dev servers don't collide.
 - `claudeArgs`: extra flags for every launch, e.g. `["--model", "opus"]`.
 - `contextWindow`: size used for the context usage bar.
+- `idleSleepMinutes`: an agent waiting for you longer than this is closed to free memory and woken up by your next message (`0` = never).
+- `language`: `auto`, `en` or `uk`.
 
 Vatra removes `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` from the agents' environment so the CLI uses your subscription login instead of API billing. Check Anthropic's current usage policy for your plan.
 

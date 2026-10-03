@@ -29,6 +29,8 @@ async function startServer() {
       VATRA_TMUX_SOCKET: SOCKET,
       VATRA_CLAUDE_BIN: join(root, 'test/fake-claude.py'),
       VATRA_NO_NOTIFY: '1',
+      // assertions below check Ukrainian server messages
+      LANG: 'uk_UA.UTF-8',
       VATRA_GH: join(root, 'test/fake-gh.py'),
       FAKE_GH_STATE: join(home, 'gh-state'),
       ANTHROPIC_API_KEY: 'must-not-leak',
@@ -470,6 +472,20 @@ describe('e2e', () => {
     expect(sh(repo, 'branch', '--list', b.branch)).toContain(b.branch);
     sh(repo, 'branch', '-D', b.branch);
   }, 60000);
+
+  it('switches server messages and the UI language to English', async () => {
+    const info = await api('PATCH', '/api/settings', { language: 'en' });
+    try {
+      expect(info.language).toBe('en');
+      await expect(api('POST', '/api/projects', {})).rejects.toThrow(/repo_path/);
+      await expect(api('POST', `/api/projects/${projectId}/tasks`, { prompt: '' })).rejects.toThrow(/^(?![\s\S]*[\u0400-\u04ff])/);
+      const cmds = await api('GET', `/api/projects/${projectId}/commands`);
+      expect(cmds.find((c: any) => c.name === '/compact').description).not.toMatch(/[\u0400-\u04ff]/);
+    } finally {
+      const back = await api('PATCH', '/api/settings', { language: 'uk' });
+      expect(back.language).toBe('uk');
+    }
+  });
 
   it('folder picking helpers', async () => {
     const list = await api('GET', `/api/fs/list?path=${encodeURIComponent(home)}`);

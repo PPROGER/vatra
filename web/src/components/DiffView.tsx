@@ -2,12 +2,13 @@ import { html as diffHtml } from 'diff2html';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DiffMode, DiffResult } from '../../../server/shared/types';
 import { api } from '../api';
+import { t, tk } from '../i18n';
 import { cx } from './ui';
 
 const MODES: { id: DiffMode; label: string; hint: string }[] = [
-  { id: 'all', label: 'Усе', hint: 'усі зміни відносно base_commit, включно з незакоміченими' },
-  { id: 'committed', label: 'Коміти', hint: 'git diff base...agent/<slug>' },
-  { id: 'working', label: 'Робочі', hint: 'git diff HEAD + нові файли' },
+  { id: 'all', label: tk('Усе'), hint: tk('усі зміни відносно base_commit, включно з незакоміченими') },
+  { id: 'committed', label: tk('Коміти'), hint: 'git diff base...agent/<slug>' },
+  { id: 'working', label: tk('Робочі'), hint: tk('git diff HEAD + нові файли') },
 ];
 
 export interface LineComment {
@@ -170,21 +171,21 @@ export function DiffView({
     if (!all.length) return;
     const body = all
       .map((c, i) => {
-        const where = `\`${c.file}:${c.line}\`${c.side === 'old' ? ' (стара версія рядка)' : ''}`;
+        const where = `\`${c.file}:${c.line}\`${c.side === 'old' ? ` (${t('стара версія рядка')})` : ''}`;
         const code = c.code.trim() ? ` — \`${c.code.trim().slice(0, 160)}\`` : '';
         return `${i + 1}. ${where}${code}\n   ${c.text.replace(/\n/g, '\n   ')}`;
       })
       .join('\n');
-    const text = `Мої коментарі до твоїх змін (диф):\n\n${body}\n\nВиправ, будь ласка, і коротко напиши, що змінив.`;
+    const text = `${t('Мої коментарі до твоїх змін (диф):')}\n\n${body}\n\n${t('Виправ, будь ласка, і коротко напиши, що змінив.')}`;
     setSending(true);
     try {
       const r = await api.message(taskId, text);
       setComments([]);
       setDraft(null);
       setShowList(false);
-      toast('success', `Надіслано агенту: ${all.length} коментар(ів)`, r.delivered === 'relaunch' ? 'Агента розбуджено з --resume' : undefined);
+      toast('success', t('Надіслано агенту, коментарів: {n}', { n: all.length }), r.delivered === 'relaunch' ? t('Агента розбуджено з --resume') : undefined);
     } catch (e) {
-      toast('error', 'Не надіслано', (e as Error).message);
+      toast('error', t('Не надіслано'), (e as Error).message);
     } finally {
       setSending(false);
     }
@@ -197,19 +198,19 @@ export function DiffView({
           {MODES.map((m) => (
             <button
               key={m.id}
-              title={m.hint}
+              title={t(m.hint)}
               onClick={() => setMode(m.id)}
               className={cx('px-2.5 h-6 text-[12px] cursor-pointer', mode === m.id ? 'bg-panel-2 text-fg' : 'text-muted hover:text-fg')}
             >
-              {m.label}
+              {t(m.label)}
             </button>
           ))}
         </div>
         {data && (
           <div className="text-[12px] text-muted font-mono whitespace-nowrap truncate min-w-0">
-            {data.stats.files} файл(ів) <span className="text-emerald-400">+{data.stats.additions}</span>{' '}
+            {t('файлів: {n}', { n: data.stats.files })} <span className="text-emerald-400">+{data.stats.additions}</span>{' '}
             <span className="text-red-400">−{data.stats.deletions}</span>
-            {data.untracked.length > 0 && <span className="text-faint"> · нових: {data.untracked.length}</span>}
+            {data.untracked.length > 0 && <span className="text-faint"> · {t('нових: {n}', { n: data.untracked.length })}</span>}
           </div>
         )}
         {loading && <span className="size-3 rounded-full border-2 border-muted border-t-transparent animate-spin" />}
@@ -220,7 +221,7 @@ export function DiffView({
               onClick={() => setLayout(l)}
               className={cx('px-2.5 h-6 text-[12px] cursor-pointer', layout === l ? 'bg-panel-2 text-fg' : 'text-muted hover:text-fg')}
             >
-              {l === 'line-by-line' ? 'Зведено' : 'Поруч'}
+              {l === 'line-by-line' ? t('Зведено') : t('Поруч')}
             </button>
           ))}
         </div>
@@ -229,18 +230,18 @@ export function DiffView({
         <div className="border-b border-line bg-amber-950/15 px-4 py-2 shrink-0">
           <div className="flex items-center gap-2 text-[12px]">
             <button className="text-amber-200 hover:underline cursor-pointer" onClick={() => setShowList((v) => !v)}>
-              💬 {comments.length} коментар(ів) до рядків {showList ? '▴' : '▾'}
+              💬 {t('Коментарі до рядків: {n}', { n: comments.length })} {showList ? '▴' : '▾'}
             </button>
             <span className="ml-auto" />
-            <button className="text-faint hover:text-red-300 cursor-pointer" onClick={() => confirm('Видалити всі коментарі?') && setComments([])}>
-              очистити
+            <button className="text-faint hover:text-red-300 cursor-pointer" onClick={() => confirm(t('Видалити всі коментарі?')) && setComments([])}>
+              {t('очистити')}
             </button>
             <button
               className="h-6 px-2.5 rounded-md bg-accent-strong text-[#1c0b00] font-semibold disabled:opacity-50 cursor-pointer"
               disabled={sending}
               onClick={() => void send()}
             >
-              {sending ? 'Надсилаю…' : 'Надіслати агенту'}
+              {sending ? t('Надсилаю…') : t('Надіслати агенту')}
             </button>
           </div>
           {showList && (
@@ -262,12 +263,12 @@ export function DiffView({
       )}
       <div ref={scroller} className="flex-1 overflow-auto p-4 diff-host">
         {error && <div className="text-red-400 text-[12px]">{error}</div>}
-        {data?.truncated && <div className="mb-3 text-amber-300 text-[12px]">Диф завеликий — показано початок.</div>}
+        {data?.truncated && <div className="mb-3 text-amber-300 text-[12px]">{t('Диф завеликий — показано початок.')}</div>}
         {data && !data.patch && !error && (
           <div className="h-full grid place-items-center text-muted text-[13px]">
             <div className="text-center">
               <div className="text-2xl mb-2 opacity-40">∅</div>
-              Змін поки немає
+              {t('Змін поки немає')}
             </div>
           </div>
         )}
@@ -293,24 +294,24 @@ export function DiffView({
                         addDraft();
                       }
                     }}
-                    placeholder="Що тут не так або що змінити…"
+                    placeholder={t('Що тут не так або що змінити…')}
                     className="w-full resize-y rounded-md bg-bg border border-line-2 px-2.5 py-1.5 text-[13px] outline-none focus:border-accent/60"
                   />
                   <div className="flex items-center gap-1.5 mt-1.5">
-                    <span className="text-[11px] text-faint">⌘/Ctrl+Enter — додати до списку</span>
+                    <span className="text-[11px] text-faint">⌘/Ctrl+Enter — {t('додати до списку')}</span>
                     <span className="ml-auto" />
                     <button className="h-6 px-2 text-[12px] text-muted hover:text-fg cursor-pointer" onClick={() => setDraft(null)}>
-                      Скасувати
+                      {t('Скасувати')}
                     </button>
                     <button className="h-6 px-2.5 rounded-md border border-line-2 text-[12px] hover:border-accent/60 cursor-pointer disabled:opacity-40" disabled={!draft.text.trim()} onClick={addDraft}>
-                      Додати
+                      {t('Додати')}
                     </button>
                     <button
                       className="h-6 px-2.5 rounded-md bg-accent-strong text-[#1c0b00] font-semibold text-[12px] cursor-pointer disabled:opacity-40"
                       disabled={!draft.text.trim() || sending}
                       onClick={() => void send({ ...draft.info, id: Date.now(), text: draft.text.trim() })}
                     >
-                      {comments.length ? `Надіслати всі (${comments.length + 1})` : 'Надіслати агенту'}
+                      {comments.length ? t('Надіслати всі ({n})', { n: comments.length + 1 }) : t('Надіслати агенту')}
                     </button>
                   </div>
                 </div>

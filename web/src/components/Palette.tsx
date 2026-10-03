@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Task } from '../../../server/shared/types';
 import { CLOSED_STATUSES } from '../../../server/shared/types';
+import { t, tk } from '../i18n';
 import { cx, StatusDot } from './ui';
 
 type Item = { key: string; kind: 'task'; task: Task; project?: Project; hay: string } | { key: string; kind: 'new'; project: Project; hay: string };
@@ -37,10 +38,10 @@ export function Palette({
   const items = useMemo(() => {
     const query = q.trim().toLowerCase();
     const all: Item[] = [
-      ...projects.map((p) => ({ key: `new-${p.id}`, kind: 'new' as const, project: p, hay: `нова задача new task ${p.name}`.toLowerCase() })),
-      ...tasks.map((t) => {
-        const project = projects.find((p) => p.id === t.projectId);
-        return { key: `t-${t.id}`, kind: 'task' as const, task: t, project, hay: `${t.title} ${t.branch} ${project?.name ?? ''} #${t.id}`.toLowerCase() };
+      ...projects.map((p) => ({ key: `new-${p.id}`, kind: 'new' as const, project: p, hay: `${tk('нова задача')} new task ${p.name}`.toLowerCase() })),
+      ...tasks.map((task) => {
+        const project = projects.find((p) => p.id === task.projectId);
+        return { key: `t-${task.id}`, kind: 'task' as const, task, project, hay: `${task.title} ${task.branch} ${project?.name ?? ''} #${task.id}`.toLowerCase() };
       }),
     ];
     const ranked = all
@@ -80,11 +81,11 @@ export function Palette({
             else if (e.key === 'ArrowUp') (e.preventDefault(), setSel((s) => Math.max(s - 1, 0)));
             else if (e.key === 'Enter') (e.preventDefault(), choose(items[sel]));
           }}
-          placeholder="Знайти задачу, гілку, проєкт… або «нова»"
+          placeholder={t('Знайти задачу, гілку, проєкт… або «нова»')}
           className="w-full bg-transparent px-4 h-12 text-[14px] outline-none border-b border-line placeholder:text-faint"
         />
         <div ref={list} className="max-h-[50vh] overflow-y-auto p-1">
-          {items.length === 0 && <div className="px-3 py-6 text-center text-faint text-[12.5px]">Нічого не знайдено</div>}
+          {items.length === 0 && <div className="px-3 py-6 text-center text-faint text-[12.5px]">{t('Нічого не знайдено')}</div>}
           {items.map((it, i) => (
             <button
               key={it.key}
@@ -104,7 +105,7 @@ export function Palette({
               ) : (
                 <>
                   <span className="text-accent text-[15px] leading-none w-2 text-center">+</span>
-                  <span className="text-[13px]">Нова задача</span>
+                  <span className="text-[13px]">{t('Нова задача')}</span>
                   <span className="ml-auto text-[11px] text-faint">{it.project.name}</span>
                 </>
               )}
@@ -112,10 +113,10 @@ export function Palette({
           ))}
         </div>
         <div className="flex gap-3 px-3 h-8 items-center border-t border-line text-[11px] text-faint">
-          <span>↑↓ вибрати</span>
-          <span>↵ відкрити</span>
-          <span>Esc закрити</span>
-          <span className="ml-auto">Alt+↑/↓ — сусідня задача</span>
+          <span>↑↓ {t('вибрати')}</span>
+          <span>↵ {t('відкрити')}</span>
+          <span>Esc {t('закрити')}</span>
+          <span className="ml-auto">Alt+↑/↓ — {t('сусідня задача')}</span>
         </div>
       </div>
     </div>

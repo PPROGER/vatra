@@ -38,7 +38,14 @@ function readToken(): string {
 
 export const token = readToken();
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string,
+  ) {
+    super(message);
+  }
+}
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -48,7 +55,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   });
   const text = await res.text();
   const json = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(json?.error ?? `${res.status} ${res.statusText}`);
+  if (!res.ok) throw new ApiError(json?.error ?? `${res.status} ${res.statusText}`, json?.code);
   return json as T;
 }
 
@@ -110,11 +117,11 @@ export const api = {
   fsInspect: (path: string) => req<RepoInspect>('GET', `/api/fs/inspect?path=${encodeURIComponent(path)}`),
   fsPick: (start?: string) => req<{ path: string | null }>('POST', '/api/fs/pick', { start }),
   merge: (id: number, strategy: 'merge' | 'squash', push = false) =>
-    req<{ task: Task; conflict?: string[]; message: string; pushed?: boolean }>('POST', `/api/tasks/${id}/merge`, { strategy, push }),
+    req<{ task: Task; conflict?: string[]; message: string; pushed?: boolean; pushFailed?: boolean }>('POST', `/api/tasks/${id}/merge`, { strategy, push }),
   discard: (id: number) => req<Task>('POST', `/api/tasks/${id}/discard`),
   rebase: (id: number) => req<{ delivered: 'typed' | 'relaunch'; ref: string }>('POST', `/api/tasks/${id}/rebase`),
   settings: (b: { language?: 'auto' | 'uk' | 'en'; idleSleepMinutes?: number; maxActive?: number }) => req<ServerInfo>('PATCH', '/api/settings', b),
-  finish: (id: number, force = false) => req<{ task: Task; message: string }>('POST', `/api/tasks/${id}/finish`, { force }),
+  finish: (id: number, force = false) => req<{ task: Task; message: string; note: string }>('POST', `/api/tasks/${id}/finish`, { force }),
   pr: (id: number) => req<{ url: string | null; created: boolean; manual?: boolean; output: string; task: Task }>('POST', `/api/tasks/${id}/pr`),
   prCheck: (id: number) => req<Task>('POST', `/api/tasks/${id}/pr/check`),
   open: (id: number, app: 'zed' | 'files' | 'terminal') => req<{ ok: true }>('POST', `/api/tasks/${id}/open`, { app }),

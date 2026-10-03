@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Project, Task } from '../../../server/shared/types';
 import { CLOSED_STATUSES, OPEN_STATUSES, SETTLED_STATUSES } from '../../../server/shared/types';
-import { api } from '../api';
+import { api, ApiError } from '../api';
+import { t } from '../i18n';
 import { DiffView } from './DiffView';
 import { Terminal } from './Terminal';
 import { Chat } from './Chat';
@@ -48,30 +49,36 @@ export function TaskView({
       await fn();
       if (ok) toast('success', ok);
     } catch (e) {
-      toast('error', 'Не вдалося', (e as Error).message);
+      toast('error', t('Не вдалося'), (e as Error).message);
     } finally {
       setBusy(null);
     }
   };
 
   const merge = (strategy: 'merge' | 'squash', push = false) => {
-    if (push && !confirm(`Злити ${task.branch} у ${task.baseBranch} і запушити ${task.baseBranch} в origin?`)) return;
+    if (push && !confirm(t('Злити {branch} у {base} і запушити {base} в origin?', { branch: task.branch, base: task.baseBranch }))) return;
     return act('merge', async () => {
       const r = await api.merge(task.id, strategy, push);
-      if (r.conflict) toast('error', 'Конфлікт злиття', `${r.conflict.join(', ')}\nАгенту відправлено прохання зробити rebase.`);
-      else toast(r.message.includes('push не пройшов') ? 'error' : 'success', r.message);
+      if (r.conflict) toast('error', t('Конфлікт злиття'), `${r.conflict.join(', ')}\n${t('Агенту відправлено прохання зробити rebase.')}`);
+      else toast(r.pushFailed ? 'error' : 'success', r.message);
     });
   };
 
   const mergeItems = [
-    { label: 'Злити й запушити', hint: `merge у ${task.baseBranch} + git push origin ${task.baseBranch}`, onClick: () => merge('merge', true) },
-    { label: 'Squash і запушити', hint: `один коміт у ${task.baseBranch} + push`, onClick: () => merge('squash', true) },
-    { label: 'Злити локально', hint: `git merge --no-ff, без push`, onClick: () => merge('merge') },
-    { label: 'Squash локально', hint: 'один коміт, без push', onClick: () => merge('squash') },
+    { label: t('Злити й запушити'), hint: t('merge у {base} + git push origin {base}', { base: task.baseBranch }), onClick: () => merge('merge', true) },
+    { label: t('Squash і запушити'), hint: t('один коміт у {base} + push', { base: task.baseBranch }), onClick: () => merge('squash', true) },
+    { label: t('Злити локально'), hint: t('git merge --no-ff, без push'), onClick: () => merge('merge') },
+    { label: t('Squash локально'), hint: t('один коміт, без push'), onClick: () => merge('squash') },
   ];
 
   const finish = async () => {
-    if (!confirm(`Завершити «${task.title}»?\n\nАгента буде зупинено, worktree прибрано, чат піде в архів (історія лишиться).\nГілку ${task.branch} буде збережено, якщо її ще немає на origin чи в ${task.baseBranch}.`)) return;
+    if (!confirm(
+        t('Завершити «{title}»?\n\nАгента буде зупинено, worktree прибрано, чат піде в архів (історія лишиться).\nГілку {branch} буде збережено, якщо її ще немає на origin чи в {base}.', {
+          title: task.title,
+          branch: task.branch,
+          base: task.baseBranch,
+        }),
+      )) return;
     setBusy('finish');
     try {
       let r;
@@ -79,20 +86,20 @@ export function TaskView({
         r = await api.finish(task.id);
       } catch (e) {
         const msg = (e as Error).message;
-        if (!/незакомічені/.test(msg) || !confirm(`${msg}\n\nВсе одно завершити?`)) throw e;
+        if ((e as ApiError).code !== 'uncommitted' || !confirm(`${msg}\n\n${t('Все одно завершити?')}`)) throw e;
         r = await api.finish(task.id, true);
       }
-      toast('success', 'Задачу завершено', r.message.replace(/^Задачу завершено\.\s*/, ''));
+      toast('success', t('Задачу завершено'), r.note || undefined);
     } catch (e) {
-      toast('error', 'Не вдалося завершити', (e as Error).message);
+      toast('error', t('Не вдалося завершити'), (e as Error).message);
     } finally {
       setBusy(null);
     }
   };
 
   const discard = () => {
-    if (!confirm(`Відкинути «${task.title}»? Worktree і гілку ${task.branch} буде видалено без можливості відновлення.`)) return;
-    void act('discard', () => api.discard(task.id), 'Задачу відкинуто');
+    if (!confirm(t('Відкинути «{title}»? Worktree і гілку {branch} буде видалено без можливості відновлення.', { title: task.title, branch: task.branch }))) return;
+    void act('discard', () => api.discard(task.id), t('Задачу відкинуто'));
   };
 
   const prMode = project?.mergeMode !== 'merge';
@@ -103,19 +110,19 @@ export function TaskView({
     act('pr', async () => {
       const r = await api.pr(task.id);
       if (r.manual) {
-        toast('info', 'Гілку запушено', r.url ? 'GitHub CLI (gh) не встановлено — відкриваю сторінку створення PR на GitHub' : r.output);
+        toast('info', t('Гілку запушено'), r.url ? t('GitHub CLI (gh) не встановлено — відкриваю сторінку створення PR на GitHub') : r.output);
         if (r.url) window.open(r.url, '_blank', 'noopener');
       } else if (r.created) {
-        toast('success', 'PR створено', r.url ?? r.output);
+        toast('success', t('PR створено'), r.url ?? r.output);
         if (r.url) window.open(r.url, '_blank', 'noopener');
-      } else toast('success', 'PR оновлено', 'Нові коміти агента запушено в той самий PR');
+      } else toast('success', t('PR оновлено'), t('Нові коміти агента запушено в той самий PR'));
     });
 
   const prCheck = () =>
     act('prcheck', async () => {
-      const t = await api.prCheck(task.id);
-      if (t.status === 'merged') toast('success', 'PR злито — задачу закрито');
-      else toast('info', `PR: ${t.prState === 'OPEN' ? 'відкритий, ще не злитий' : t.prState === 'CLOSED' ? 'закритий без злиття' : t.prState}`);
+      const r = await api.prCheck(task.id);
+      if (r.status === 'merged') toast('success', t('PR злито — задачу закрито'));
+      else toast('info', `PR: ${r.prState === 'OPEN' ? t('відкритий, ще не злитий') : r.prState === 'CLOSED' ? t('закритий без злиття') : r.prState}`);
     });
 
   const showChat = tab === 'chat' || tab === 'split';
@@ -128,15 +135,15 @@ export function TaskView({
       <div className="flex items-start gap-4 px-5 pt-3.5 pb-3 border-b border-line shrink-0">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5">
-            <EditableTitle task={task} onError={(m) => toast('error', 'Не вдалося перейменувати', m)} />
+            <EditableTitle task={task} onError={(m) => toast('error', t('Не вдалося перейменувати'), m)} />
             <StatusBadge status={task.status} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-muted font-mono">
-            <span title="Гілка агента">{task.branch}</span>
+            <span title={t('Гілка агента')}>{task.branch}</span>
             <span className="text-faint">← {task.baseBranch}{task.baseCommit ? `@${task.baseCommit.slice(0, 7)}` : ''}</span>
             {open && !!task.baseAhead && (
               <span className="inline-flex items-center gap-1.5 font-sans">
-                <span className="text-amber-300" title={`У ${task.baseRef} є коміти, яких немає в гілці агента`}>
+                <span className="text-amber-300" title={t('У {ref} є коміти, яких немає в гілці агента', { ref: task.baseRef })}>
                   {task.baseRef} +{task.baseAhead}
                 </span>
                 <button
@@ -144,10 +151,10 @@ export function TaskView({
                   onClick={() =>
                     act('rebase', async () => {
                       const r = await api.rebase(task.id);
-                      toast('info', 'Попросив агента зробити rebase', `на ${r.ref}${r.delivered === 'relaunch' ? ' (агента розбуджено)' : ''}`);
+                      toast('info', t('Попросив агента зробити rebase'), r.delivered === 'relaunch' ? t('на {ref} (агента розбуджено)', { ref: r.ref }) : t('на {ref}', { ref: r.ref }));
                     })
                   }
-                  title="Попросити агента зробити rebase на свіжу базову гілку й розвʼязати конфлікти"
+                  title={t('Попросити агента зробити rebase на свіжу базову гілку й розвʼязати конфлікти')}
                 >
                   {busy === 'rebase' ? '…' : 'Rebase'}
                 </button>
@@ -167,7 +174,7 @@ export function TaskView({
                 'inline-flex items-center gap-1 h-7 px-2.5 rounded-md border text-[12px] font-mono',
                 task.prState === 'MERGED' ? 'border-violet-800 text-violet-300' : task.prState === 'CLOSED' ? 'border-line-2 text-faint line-through' : 'border-emerald-800 text-emerald-300',
               )}
-              title="Відкрити PR на GitHub"
+              title={t('Відкрити PR на GitHub')}
             >
               PR #{prNumber ?? '?'} ↗
             </a>
@@ -178,50 +185,50 @@ export function TaskView({
               busy={busy === 'pr'}
               disabled={!canMerge}
               onClick={pr}
-              title={prOpen ? 'Закомітити й запушити нові зміни агента в цей PR' : `git push + PR → ${task.baseBranch}`}
+              title={prOpen ? t('Закомітити й запушити нові зміни агента в цей PR') : `git push + PR → ${task.baseBranch}`}
             >
-              {prOpen ? 'Оновити PR' : 'Створити PR'}
+              {prOpen ? t('Оновити PR') : t('Створити PR')}
             </Button>
           )}
           {open && !prMode && (
-            <Menu label={busy === 'merge' ? 'Зливаю…' : 'Злити'} variant="primary" disabled={!canMerge || busy === 'merge'} items={mergeItems} />
+            <Menu label={busy === 'merge' ? t('Зливаю…') : t('Злити')} variant="primary" disabled={!canMerge || busy === 'merge'} items={mergeItems} />
           )}
           {open && (
-            <Button busy={busy === 'finish'} onClick={finish} title="Ти вже все зробив сам (напр. агент запушив із чату): зупинити агента, прибрати worktree, чат — в архів">
-              Завершити
+            <Button busy={busy === 'finish'} onClick={finish} title={t('Ти вже все зробив сам (напр. агент запушив із чату): зупинити агента, прибрати worktree, чат — в архів')}>
+              {t('Завершити')}
             </Button>
           )}
           {(open || task.status === 'creating') && (
             <Menu
               label={busy && !['pr', 'merge', 'finish'].includes(busy) ? '…' : '⋯'}
               chevron={false}
-              title="Інші дії"
+              title={t('Інші дії')}
               items={[
                 ...(live
                   ? [
-                      { section: 'Агент', label: 'Перезапустити', hint: 'нова сесія з claude --resume', onClick: () => act('restart', () => api.restart(task.id)) },
-                      { label: 'Зупинити', hint: 'закрити claude, задача лишається', onClick: () => act('stop', () => api.stop(task.id)) },
+                      { section: t('Агент'), label: t('Перезапустити'), hint: t('нова сесія з claude --resume'), onClick: () => act('restart', () => api.restart(task.id)) },
+                      { label: t('Зупинити'), hint: t('закрити claude, задача лишається'), onClick: () => act('stop', () => api.stop(task.id)) },
                     ]
                   : open
-                    ? [{ section: 'Агент', label: 'Запустити', hint: 'claude --resume', onClick: () => act('restart', () => api.restart(task.id)) }]
+                    ? [{ section: t('Агент'), label: t('Запустити'), hint: 'claude --resume', onClick: () => act('restart', () => api.restart(task.id)) }]
                     : []),
                 ...(open
                   ? [
                       prMode
-                        ? { section: 'Git', label: 'Злити…', hint: 'merge / squash, з push або без', onClick: () => setMergeOpen(true), disabled: !canMerge }
-                        : { section: 'Git', label: prOpen ? 'Оновити PR' : 'Створити PR', hint: `push + PR → ${task.baseBranch}`, onClick: () => void pr(), disabled: !canMerge },
-                      ...(prOpen ? [{ label: 'Перевірити PR', hint: 'чи вже злили (й так раз на 2 хв)', onClick: () => void prCheck() }] : []),
-                      { section: 'Відкрити', label: 'Zed', onClick: () => act('open', () => api.open(task.id, 'zed')) },
-                      { label: 'Файли', hint: 'Finder / файловий менеджер', onClick: () => act('open', () => api.open(task.id, 'files')) },
-                      { label: 'Термінал', onClick: () => act('open', () => api.open(task.id, 'terminal')) },
+                        ? { section: 'Git', label: t('Злити…'), hint: t('merge / squash, з push або без'), onClick: () => setMergeOpen(true), disabled: !canMerge }
+                        : { section: 'Git', label: prOpen ? t('Оновити PR') : t('Створити PR'), hint: `push + PR → ${task.baseBranch}`, onClick: () => void pr(), disabled: !canMerge },
+                      ...(prOpen ? [{ label: t('Перевірити PR'), hint: t('чи вже злили (й так раз на 2 хв)'), onClick: () => void prCheck() }] : []),
+                      { section: t('Відкрити'), label: 'Zed', onClick: () => act('open', () => api.open(task.id, 'zed')) },
+                      { label: t('Файли'), hint: t('Finder / файловий менеджер'), onClick: () => act('open', () => api.open(task.id, 'files')) },
+                      { label: t('Термінал'), onClick: () => act('open', () => api.open(task.id, 'terminal')) },
                     ]
                   : []),
-                { section: open ? ' ' : undefined, label: 'Відкинути', hint: 'видалити worktree і гілку', danger: true, onClick: discard },
+                { section: open ? ' ' : undefined, label: t('Відкинути'), hint: t('видалити worktree і гілку'), danger: true, onClick: discard },
               ]}
             />
           )}
           {mergeOpen && (
-            <Modal title={`Злити ${task.branch} → ${task.baseBranch}`} onClose={() => setMergeOpen(false)} width="max-w-md">
+            <Modal title={t('Злити {branch} → {base}', { branch: task.branch, base: task.baseBranch })} onClose={() => setMergeOpen(false)} width="max-w-md">
               <div className="grid gap-1.5">
                 {mergeItems.map((m) => (
                   <button
@@ -258,10 +265,10 @@ export function TaskView({
         <div className="flex">
           {(
             [
-              ['chat', 'Чат'],
-              ['terminal', 'Термінал'],
-              ['diff', 'Диф'],
-              ['split', 'Чат + диф'],
+              ['chat', t('Чат')],
+              ['terminal', t('Термінал')],
+              ['diff', t('Диф')],
+              ['split', t('Чат + диф')],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -277,7 +284,7 @@ export function TaskView({
           ))}
         </div>
         <span className="ml-auto text-[11px] text-faint pr-2">
-          {tab === 'terminal' ? 'Сирий TUI claude — для меню, /model, /config тощо' : task.alive ? 'Чат і термінал — одна й та сама сесія claude' : ''}
+          {tab === 'terminal' ? t('Сирий TUI claude — для меню, /model, /config тощо') : task.alive ? t('Чат і термінал — одна й та сама сесія claude') : ''}
         </span>
       </div>
 
@@ -295,7 +302,7 @@ export function TaskView({
         </div>
         <div className={cx('min-w-0 min-h-0 h-full', showDiff ? 'flex-1' : 'hidden')}>
           {CLOSED_STATUSES.includes(task.status) ? (
-            <div className="h-full grid place-items-center text-muted">Worktree прибрано — дифу більше немає.</div>
+            <div className="h-full grid place-items-center text-muted">{t('Worktree прибрано — дифу більше немає.')}</div>
           ) : (
             <DiffView taskId={task.id} refreshKey={diffTick} enabled={showDiff && !!task.baseCommit} toast={toast} />
           )}
@@ -334,7 +341,7 @@ function EditableTitle({ task, onError }: { task: Task; onError: (m: string) => 
       />
     );
   return (
-    <h1 className="text-[15px] font-semibold truncate cursor-text hover:text-accent/90" title="Клікни, щоб перейменувати" onClick={() => (setValue(task.title), setEditing(true))}>
+    <h1 className="text-[15px] font-semibold truncate cursor-text hover:text-accent/90" title={t('Клікни, щоб перейменувати')} onClick={() => (setValue(task.title), setEditing(true))}>
       {task.title}
     </h1>
   );
@@ -342,16 +349,16 @@ function EditableTitle({ task, onError }: { task: Task; onError: (m: string) => 
 
 function NotRunning({ task, onStart, busy, canStart }: { task: Task; onStart: () => void; busy: boolean; canStart: boolean }) {
   const text: Record<string, string> = {
-    creating: 'Створюю worktree і готую середовище…',
-    queued: 'Чекає вільного слота (ліміт активних агентів).',
-    sleeping: 'Агент спить, бо довго простоював. Напиши в чат або натисни кнопку — він продовжить з того ж місця.',
-    review: 'Агент не запущений. Переглянь диф, злий або продовж роботу.',
-    error: 'Агент не запущений.',
-    merged: `Злито${task.mergedAt ? ` ${timeAgo(task.mergedAt)} тому` : ''}. Worktree і гілку прибрано.`,
-    discarded: 'Задачу відкинуто.',
-    done: 'Задачу завершено вручну, чат в архіві. Worktree прибрано.',
-    running: 'Підключаюсь…',
-    idle: 'Підключаюсь…',
+    creating: t('Створюю worktree і готую середовище…'),
+    queued: t('Чекає вільного слота (ліміт активних агентів).'),
+    sleeping: t('Агент спить, бо довго простоював. Напиши в чат або натисни кнопку — він продовжить з того ж місця.'),
+    review: t('Агент не запущений. Переглянь диф, злий або продовж роботу.'),
+    error: t('Агент не запущений.'),
+    merged: task.mergedAt ? t('Злито {ago} тому. Worktree і гілку прибрано.', { ago: timeAgo(task.mergedAt) }) : t('Злито. Worktree і гілку прибрано.'),
+    discarded: t('Задачу відкинуто.'),
+    done: t('Задачу завершено вручну, чат в архіві. Worktree прибрано.'),
+    running: t('Підключаюсь…'),
+    idle: t('Підключаюсь…'),
   };
   return (
     <div className="h-full grid place-items-center bg-bg">
@@ -359,7 +366,7 @@ function NotRunning({ task, onStart, busy, canStart }: { task: Task; onStart: ()
         <div className="text-muted text-[13px] mb-3">{text[task.status]}</div>
         {canStart && task.status !== 'queued' && (
           <Button variant="primary" onClick={onStart} busy={busy}>
-            {task.status === 'sleeping' ? 'Розбудити агента' : 'Запустити агента (--resume)'}
+            {task.status === 'sleeping' ? t('Розбудити агента') : t('Запустити агента (--resume)')}
           </Button>
         )}
       </div>

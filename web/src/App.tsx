@@ -9,6 +9,23 @@ import { CLOSED_STATUSES } from '../../server/shared/types';
 import { Sidebar } from './components/Sidebar';
 import { TaskView } from './components/TaskView';
 import { Button, Toasts, type Toast } from './components/ui';
+import { getLang, setLang, t, type Lang } from './i18n';
+
+const LANG_KEY = 'vatra-lang';
+
+/** Language to render before /api/info arrives: last known one, else a guess from the browser. */
+function initialLang(): Lang {
+  try {
+    const saved = localStorage.getItem(LANG_KEY);
+    if (saved === 'uk' || saved === 'en') return saved;
+  } catch {
+    /* ignore */
+  }
+  const nav = (typeof navigator !== 'undefined' ? navigator.language : '').toLowerCase();
+  return /^(uk|ru)\b/.test(nav) ? 'uk' : 'en';
+}
+
+setLang(initialLang());
 
 function draftFromHash(): number | null {
   const m = location.hash.match(/^#\/new\/(\d+)/);
@@ -21,7 +38,19 @@ function selectedFromHash(): number | null {
 }
 
 export function App() {
-  const [info, setInfo] = useState<ServerInfo | null>(null);
+  const [info, setInfoState] = useState<ServerInfo | null>(null);
+  const [lang, setLangState] = useState<Lang>(getLang);
+  /** Stores server info and switches the UI language before the next render. */
+  const setInfo = useCallback((i: ServerInfo) => {
+    setLang(i.language);
+    setLangState(i.language);
+    try {
+      localStorage.setItem(LANG_KEY, i.language);
+    } catch {
+      /* ignore */
+    }
+    setInfoState(i);
+  }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [connected, setConnected] = useState(false);
@@ -65,7 +94,11 @@ export function App() {
     } catch (e) {
       setAuthError((e as Error).message);
     }
-  }, []);
+  }, [setInfo]);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   useEffect(() => {
     const onEvent = (e: ServerEvent) => {
@@ -142,8 +175,9 @@ export function App() {
   // title shows how many agents are waiting
   useEffect(() => {
     const waiting = tasks.filter((t) => t.status === 'idle').length;
-    document.title = waiting ? `(${waiting}) Ватра` : 'Ватра';
-  }, [tasks]);
+    const name = t('Ватра');
+    document.title = waiting ? `(${waiting}) ${name}` : name;
+  }, [tasks, lang]);
 
   const task = tasks.find((t) => t.id === selected) ?? null;
 
@@ -151,15 +185,15 @@ export function App() {
     return (
       <div className="h-full grid place-items-center text-muted p-6 text-center">
         <div>
-          <div className="text-fg font-semibold mb-2">Немає токена доступу</div>
-          Відкрий UI за адресою, яку друкує сервер при старті (http://localhost:4317).
+          <div className="text-fg font-semibold mb-2">{t('Немає токена доступу')}</div>
+          {t('Відкрий UI за адресою, яку друкує сервер при старті (http://localhost:4317).')}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full">
+    <div key={lang} className="flex h-full">
       <Sidebar
         projects={projects}
         tasks={tasks}
@@ -193,7 +227,7 @@ export function App() {
       {modal?.kind === 'project' && (
         <NewProjectModal
           onClose={() => setModal(null)}
-          onError={(m) => toast('error', 'Не вдалося додати проєкт', m)}
+          onError={(m) => toast('error', t('Не вдалося додати проєкт'), m)}
           onDone={(p) => {
             setModal(null);
             newTask(p.id);
@@ -204,13 +238,13 @@ export function App() {
         <ProjectSettingsModal
           project={modal.project}
           onClose={() => setModal(null)}
-          onError={(m) => toast('error', 'Помилка', m)}
+          onError={(m) => toast('error', t('Помилка'), m)}
           onDeleted={() => setModal(null)}
         />
       )}
       {palette && <Palette projects={projects} tasks={tasks} onClose={() => setPalette(false)} onTask={select} onNew={newTask} />}
       {modal?.kind === 'app' && info && (
-        <SettingsModal info={info} onClose={() => setModal(null)} onSaved={setInfo} onError={(m) => toast('error', 'Помилка', m)} />
+        <SettingsModal info={info} onClose={() => setModal(null)} onSaved={setInfo} onError={(m) => toast('error', t('Помилка'), m)} />
       )}
       <Toasts toasts={toasts} dismiss={(id) => setToasts((t) => t.filter((x) => x.id !== id))} />
     </div>
@@ -221,18 +255,18 @@ function Empty({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="h-full grid place-items-center p-8">
       <div className="max-w-md">
-        <h1 className="text-[18px] font-semibold mb-2">Розпалимо Ватру</h1>
+        <h1 className="text-[18px] font-semibold mb-2">{t('Розпалимо Ватру')}</h1>
         <p className="text-muted leading-relaxed mb-5">
-          Кожна задача — окрема гілка <code className="font-mono text-fg">agent/&lt;slug&gt;</code> у своєму git worktree з власним інтерактивним{' '}
-          <code className="font-mono text-fg">claude</code>. Агенти працюють паралельно на твоїй підписці, ти спілкуєшся з ними в чаті, дивишся диф і зливаєш, коли готово.
+          {t('Кожна задача — окрема гілка')} <code className="font-mono text-fg">agent/&lt;slug&gt;</code> {t('у своєму git worktree з власним інтерактивним')}{' '}
+          <code className="font-mono text-fg">claude</code>. {t('Агенти працюють паралельно на твоїй підписці, ти спілкуєшся з ними в чаті, дивишся диф і зливаєш, коли готово.')}
         </p>
         <ol className="text-muted space-y-1.5 mb-6 list-decimal list-inside">
-          <li>Додай проєкт — обери папку з git-репозиторієм.</li>
-          <li>Напиши задачу в чаті — агент стартує сам.</li>
-          <li>Коли агент чекає, прийде сповіщення. Переглянь диф → «Злити».</li>
+          <li>{t('Додай проєкт — обери папку з git-репозиторієм.')}</li>
+          <li>{t('Напиши задачу в чаті — агент стартує сам.')}</li>
+          <li>{t('Коли агент чекає, прийде сповіщення. Переглянь диф → «Злити».')}</li>
         </ol>
         <Button variant="primary" onClick={onAdd}>
-          Додати проєкт
+          {t('Додати проєкт')}
         </Button>
       </div>
     </div>

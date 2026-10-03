@@ -1,4 +1,5 @@
 // Everything that differs between macOS and Linux lives here.
+import { tr } from './shared/i18n/index.js';
 import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -63,7 +64,7 @@ export function notify(title: string, body: string): void {
   if (platform === 'darwin') {
     detached('osascript', ['-e', `display notification ${osaQuote(body)} with title ${osaQuote(title)}`]);
   } else {
-    detached('notify-send', ['-a', 'Ватра', title, body]);
+    detached('notify-send', ['-a', tr('Ватра'), title, body]);
   }
 }
 
@@ -78,7 +79,7 @@ export async function openIn(target: OpenTarget, path: string): Promise<void> {
     const bin = (await which('zed')) ?? (await which('zeditor'));
     if (bin) return detached(bin, [path]);
     if (platform === 'darwin') return detached('open', ['-a', 'Zed', path]);
-    throw new Error('Zed не знайдено в PATH (zed або zeditor)');
+    throw new Error(tr('Zed не знайдено в PATH (zed або zeditor)'));
   }
   // terminal
   if (platform === 'darwin') {
@@ -95,7 +96,7 @@ export async function openIn(target: OpenTarget, path: string): Promise<void> {
   ] as const) {
     if (await which(cmd)) return detached(cmd, [...args]);
   }
-  throw new Error('Не знайдено емулятор термінала');
+  throw new Error(tr('Не знайдено емулятор термінала'));
 }
 
 /**

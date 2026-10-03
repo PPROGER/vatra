@@ -6,6 +6,7 @@ import { CLOSED_STATUSES } from '../../../server/shared/types';
 import { api, onServerEvent } from '../api';
 import { AssistantText, splitAttachments, SystemLine, Thinking, ToolGroup, UserBubble, withAttachments, type Delivery } from './ChatItems';
 import { Composer, type Attachment, type ComposerHandle } from './Composer';
+import { t } from '../i18n';
 import { Button, cx } from './ui';
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
@@ -146,17 +147,17 @@ export function Chat({
       setPending((ps) => ps.map((p) => (p.localId === id ? { ...p, status: 'sent' } : p)));
       const cmd = text.split(/\s/)[0];
       if (INTERACTIVE.has(cmd) && !(cmd === '/model' && text.trim() !== '/model')) {
-        toast('info', `${cmd} відкриває меню в терміналі`, 'Перемикаю на термінал — відповідай там.');
+        toast('info', t('{cmd} відкриває меню в терміналі', { cmd }), t('Перемикаю на термінал — відповідай там.'));
         setTimeout(onOpenTerminal, 400);
       }
-      if (r.delivered === 'relaunch') toast('info', 'Агент перезапускається з --resume', 'Повідомлення буде першим запитом нової сесії');
+      if (r.delivered === 'relaunch') toast('info', t('Агент перезапускається з --resume'), t('Повідомлення буде першим запитом нової сесії'));
     } catch (e) {
       setPending((ps) => ps.map((p) => (p.localId === id ? { ...p, status: 'error' } : p)));
-      toast('error', 'Не надіслано', (e as Error).message);
+      toast('error', t('Не надіслано'), (e as Error).message);
     }
   };
 
-  const key = (k: string) => api.keys(taskId, k).catch((e) => toast('error', 'Не вдалося', e.message));
+  const key = (k: string) => api.keys(taskId, k).catch((e) => toast('error', t('Не вдалося'), e.message));
 
   const live = task.status === 'running' || task.status === 'idle';
   const closed = CLOSED_STATUSES.includes(task.status);
@@ -189,24 +190,24 @@ export function Chat({
     >
       {/* top bar: model, context, quick actions */}
       <div className="flex items-center gap-3 px-4 h-10 border-b border-line shrink-0 text-[12px]">
-        <span className="text-muted font-mono truncate max-w-48" title="Модель">
+        <span className="text-muted font-mono truncate max-w-48" title={t('Модель')}>
           {ctx?.model?.replace(/^claude-/, '') ?? '—'}
         </span>
-        <div className="flex items-center gap-2" title={ctx ? `${ctx.usedTokens.toLocaleString()} з ${ctx.windowTokens.toLocaleString()} токенів` : 'Ще немає даних'}>
+        <div className="flex items-center gap-2" title={ctx ? t('{used} з {total} токенів', { used: ctx.usedTokens.toLocaleString(), total: ctx.windowTokens.toLocaleString() }) : t('Ще немає даних')}>
           <div className="w-28 h-1.5 rounded-full bg-panel-2 overflow-hidden">
             <div className={cx('h-full rounded-full', pct < 60 ? 'bg-emerald-500' : pct < 85 ? 'bg-amber-400' : 'bg-red-500')} style={{ width: `${pct}%` }} />
           </div>
           <span className="text-muted font-mono whitespace-nowrap">
-            {ctx ? `${fmtTokens(ctx.usedTokens)} / ${fmtTokens(ctx.windowTokens)}` : 'контекст'}
-            {ctx && <span className="hidden @2xl:inline"> · вільно {100 - pct}%</span>}
+            {ctx ? `${fmtTokens(ctx.usedTokens)} / ${fmtTokens(ctx.windowTokens)}` : t('контекст')}
+            {ctx && <span className="hidden @2xl:inline"> · {t('вільно {pct}%', { pct: 100 - pct })}</span>}
           </span>
         </div>
         {!closed && (
           <div className="ml-auto flex items-center gap-1">
             {[
-              ['/compact', 'Стиснути контекст'],
-              ['/context', 'Що займає контекст'],
-              ['/cost', 'Вартість/токени'],
+              ['/compact', t('Стиснути контекст')],
+              ['/context', t('Що займає контекст')],
+              ['/cost', t('Вартість/токени')],
             ].map(([c, title]) => (
               <button
                 key={c}
@@ -219,14 +220,14 @@ export function Chat({
             ))}
             <button
               className="hidden @3xl:inline-block h-6 px-2 rounded-md font-mono text-[11.5px] text-muted hover:text-fg hover:bg-panel-2 cursor-pointer"
-              title="Почати розмову заново (історія агента скидається)"
-              onClick={() => confirm('Очистити розмову агента (/clear)? Зміни в коді лишаться.') && send('/clear', [])}
+              title={t('Почати розмову заново (історія агента скидається)')}
+              onClick={() => confirm(t('Очистити розмову агента (/clear)? Зміни в коді лишаться.')) && send('/clear', [])}
             >
               /clear
             </button>
             {live && (
-              <button className="h-6 px-2 rounded-md text-[11.5px] text-muted hover:text-fg hover:bg-panel-2 cursor-pointer whitespace-nowrap" title="Shift+Tab у claude: звичайний → auto-accept → plan" onClick={() => key('mode')}>
-                ⇧Tab режим
+              <button className="h-6 px-2 rounded-md text-[11.5px] text-muted hover:text-fg hover:bg-panel-2 cursor-pointer whitespace-nowrap" title={t('Shift+Tab у claude: звичайний → auto-accept → plan')} onClick={() => key('mode')}>
+                {t('⇧Tab режим')}
               </button>
             )}
           </div>
@@ -243,14 +244,14 @@ export function Chat({
         }}
       >
         <div className="mx-auto max-w-4xl px-5 py-5 space-y-3.5">
-          {state === null && <div className="text-center text-faint text-[12px] py-10">Завантажую розмову…</div>}
+          {state === null && <div className="text-center text-faint text-[12px] py-10">{t('Завантажую розмову…')}</div>}
           {state && items.length === 0 && pending.length === 0 && !task.prompt && (
             <div className="text-center text-faint text-[12.5px] py-12">
               {task.status === 'creating' || task.status === 'queued'
-                ? 'Агент ще стартує…'
+                ? t('Агент ще стартує…')
                 : live
-                  ? 'Розмова порожня. Напиши агенту, що зробити, або обери /команду.'
-                  : 'Немає історії розмови для цієї задачі.'}
+                  ? t('Розмова порожня. Напиши агенту, що зробити, або обери /команду.')
+                  : t('Немає історії розмови для цієї задачі.')}
             </div>
           )}
           {/* the first prompt, until claude's transcript shows it */}
@@ -260,7 +261,7 @@ export function Chat({
           {state && items.length === 0 && !state.permission && ['creating', 'queued', 'running'].includes(task.status) && (
             <div className="flex items-center gap-2 text-[12px] text-muted">
               <span className="size-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-              {task.status === 'creating' ? 'Готую worktree і гілку…' : task.status === 'queued' ? 'Чекаю вільного слота для агента…' : 'Запускаю claude…'}
+              {task.status === 'creating' ? t('Готую worktree і гілку…') : task.status === 'queued' ? t('Чекаю вільного слота для агента…') : t('Запускаю claude…')}
             </div>
           )}
           {blocks.map((b, i) =>
@@ -297,9 +298,9 @@ export function Chat({
                 <span className="size-1.5 rounded-full bg-accent pulse-dot [animation-delay:0.2s]" />
                 <span className="size-1.5 rounded-full bg-accent pulse-dot [animation-delay:0.4s]" />
               </span>
-              <span className="truncate font-mono">{state?.activity ?? 'Працює…'}</span>
-              <button className="ml-2 text-faint hover:text-red-300 cursor-pointer" onClick={() => key('interrupt')} title="Esc у claude — перервати поточний хід">
-                перервати
+              <span className="truncate font-mono">{state?.activity ?? t('Працює…')}</span>
+              <button className="ml-2 text-faint hover:text-red-300 cursor-pointer" onClick={() => key('interrupt')} title={t('Esc у claude — перервати поточний хід')}>
+                {t('перервати')}
               </button>
             </div>
           )}
@@ -310,34 +311,34 @@ export function Chat({
       {state?.permission && live && (
         <div className="mx-auto w-full max-w-4xl px-5 pb-2">
           <div className="rounded-xl border border-amber-700/60 bg-amber-950/25 px-4 py-3">
-            <div className="text-[12px] text-amber-300 font-medium mb-0.5">{state.permission.kind === 'trust' ? 'Довіряти папці?' : 'Агент просить дозвіл'}</div>
+            <div className="text-[12px] text-amber-300 font-medium mb-0.5">{state.permission.kind === 'trust' ? t('Довіряти папці?') : t('Агент просить дозвіл')}</div>
             {state.permission.tool && <div className="font-mono text-[12.5px] text-fg break-all mb-0.5">{state.permission.tool}</div>}
             <div className="text-[12px] text-muted mb-2.5">{state.permission.message}</div>
             <div className="flex flex-wrap gap-1.5">
               {state.permission.kind === 'trust' ? (
                 <>
                   <Button variant="primary" onClick={() => key('allow')}>
-                    Довіряю, працюй
+                    {t('Довіряю, працюй')}
                   </Button>
                   <Button variant="danger" onClick={() => key('deny')}>
-                    Ні
+                    {t('Ні')}
                   </Button>
                 </>
               ) : (
                 <>
                   <Button variant="primary" onClick={() => key('allow')}>
-                    Дозволити
+                    {t('Дозволити')}
                   </Button>
-                  <Button onClick={() => key('allow-always')} title="«Yes, and don't ask again» — друга опція в меню claude">
-                    Дозволити й не питати
+                  <Button onClick={() => key('allow-always')} title={t('«Yes, and don\'t ask again» — друга опція в меню claude')}>
+                    {t('Дозволити й не питати')}
                   </Button>
-                  <Button variant="danger" onClick={() => key('deny')} title="Esc — відмовити і сказати, що робити інакше">
-                    Відхилити
+                  <Button variant="danger" onClick={() => key('deny')} title={t('Esc — відмовити і сказати, що робити інакше')}>
+                    {t('Відхилити')}
                   </Button>
                 </>
               )}
               <Button variant="ghost" onClick={onOpenTerminal}>
-                Показати в терміналі
+                {t('Показати в терміналі')}
               </Button>
             </div>
           </div>
@@ -350,26 +351,26 @@ export function Chat({
           {!live && task.status !== 'creating' && (
             <div className="text-[11.5px] text-faint mb-1.5">
               {task.status === 'queued'
-                ? 'Агент у черзі — повідомлення дочекається запуску.'
+                ? t('Агент у черзі — повідомлення дочекається запуску.')
                 : task.status === 'sleeping'
-                  ? 'Агент спить — повідомлення розбудить його з тієї ж розмови (--resume).'
-                  : 'Агент не запущений — повідомлення перезапустить його з --resume.'}
+                  ? t('Агент спить — повідомлення розбудить його з тієї ж розмови (--resume).')
+                  : t('Агент не запущений — повідомлення перезапустить його з --resume.')}
             </div>
           )}
           <Composer
             ref={composer}
             scope={scope}
             disabled={task.status === 'creating'}
-            placeholder={live ? 'Напиши агенту… ( / — команди, @ — файли, ! — bash )' : 'Повідомлення перезапустить агента…'}
+            placeholder={live ? t('Напиши агенту… ( / — команди, @ — файли, ! — bash )') : t('Повідомлення перезапустить агента…')}
             onSend={(t, a) => void send(t, a)}
-            onError={(m) => toast('error', 'Помилка', m)}
+            onError={(m) => toast('error', t('Помилка'), m)}
           />
         </div>
       )}
 
       {dragging && (
         <div className="absolute inset-0 z-40 grid place-items-center bg-bg/80 border-2 border-dashed border-accent/60 rounded-lg pointer-events-none">
-          <div className="text-accent text-[14px]">Відпусти, щоб прикріпити файли</div>
+          <div className="text-accent text-[14px]">{t('Відпусти, щоб прикріпити файли')}</div>
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type DirListing } from '../api';
+import { t, tk } from '../i18n';
 import { Button, cx, inputCls, Modal } from './ui';
 
 function prettyPath(p: string, home: string | null) {
@@ -14,7 +15,7 @@ export function FolderBrowser({ start, onPick, onClose }: { start?: string; onPi
   const [hidden, setHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
-  const home = listing?.shortcuts.find((s) => s.label === 'Домівка')?.path ?? null;
+  const home = listing?.shortcuts.find((s) => s.label === tk('Домівка') || s.label === t('Домівка'))?.path ?? null;
 
   const go = (p?: string, fallback = false) => {
     api
@@ -39,7 +40,7 @@ export function FolderBrowser({ start, onPick, onClose }: { start?: string; onPi
   const targetIsGit = selected ? !!listing?.entries.find((e) => e.path === selected)?.isGit : !!listing?.isGit;
 
   return (
-    <Modal title="Обрати папку проєкту" onClose={onClose} width="max-w-2xl">
+    <Modal title={t('Обрати папку проєкту')} onClose={onClose} width="max-w-2xl">
       <div className="flex flex-wrap gap-1.5 mb-3">
         {listing?.shortcuts.map((s) => (
           <button
@@ -61,15 +62,15 @@ export function FolderBrowser({ start, onPick, onClose }: { start?: string; onPi
           go(pathInput);
         }}
       >
-        <Button type="button" variant="ghost" disabled={!listing?.parent} onClick={() => listing?.parent && go(listing.parent)} title="Вгору">
+        <Button type="button" variant="ghost" disabled={!listing?.parent} onClick={() => listing?.parent && go(listing.parent)} title={t('Вгору')}>
           ↑
         </Button>
         <input className={inputCls + ' font-mono h-7 py-0'} value={pathInput} onChange={(e) => setPathInput(e.target.value)} />
-        <input className={inputCls + ' h-7 py-0 w-40'} placeholder="фільтр…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <input className={inputCls + ' h-7 py-0 w-40'} placeholder={t('фільтр…')} value={filter} onChange={(e) => setFilter(e.target.value)} />
       </form>
       {error && <div className="text-red-400 text-[12px] mb-2">{error}</div>}
       <div className="h-80 overflow-y-auto rounded-md border border-line bg-bg">
-        {entries.length === 0 && <div className="p-4 text-muted text-[12px]">Порожньо</div>}
+        {entries.length === 0 && <div className="p-4 text-muted text-[12px]">{t('Порожньо')}</div>}
         {entries.map((e) => (
           <div
             key={e.path}
@@ -89,7 +90,7 @@ export function FolderBrowser({ start, onPick, onClose }: { start?: string; onPi
                 ev.stopPropagation();
                 go(e.path);
               }}
-              title="Відкрити"
+              title={t('Відкрити')}
             >
               →
             </button>
@@ -99,20 +100,20 @@ export function FolderBrowser({ start, onPick, onClose }: { start?: string; onPi
       <div className="flex items-center gap-3 mt-3">
         <label className="flex items-center gap-1.5 text-[12px] text-muted cursor-pointer">
           <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.target.checked)} />
-          приховані
+          {t('приховані')}
         </label>
         <div className="text-[12px] text-muted truncate flex-1 font-mono" title={target ?? ''}>
           {target ? prettyPath(target, home) : ''}
-          {target && !targetIsGit && <span className="text-amber-300 font-sans"> · не git-репозиторій</span>}
+          {target && !targetIsGit && <span className="text-amber-300 font-sans"> · {t('не git-репозиторій')}</span>}
         </div>
         <Button variant="ghost" onClick={onClose}>
-          Скасувати
+          {t('Скасувати')}
         </Button>
         <Button variant="primary" disabled={!target} onClick={() => target && onPick(target)}>
-          Обрати
+          {t('Обрати')}
         </Button>
       </div>
-      <div className="text-[11px] text-faint mt-2">Клік — виділити, подвійний клік — увійти в папку.</div>
+      <div className="text-[11px] text-faint mt-2">{t('Клік — виділити, подвійний клік — увійти в папку.')}</div>
     </Modal>
   );
 }

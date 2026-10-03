@@ -1,5 +1,6 @@
 // Turns Claude Code's session transcript (~/.claude/projects/<cwd>/<session>.jsonl,
 // path comes from hook payloads) into chat items, tailing the file live.
+import { tr } from './shared/i18n/index.js';
 import { closeSync, existsSync, fstatSync, openSync, readSync, unwatchFile, watchFile } from 'node:fs';
 import type { ChatContext, ChatItem, ChatState, ServerEvent } from './shared/types.js';
 
@@ -8,7 +9,7 @@ const MAX_TEXT = 20_000;
 
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(\x07|\x1b\\)/g;
 const stripAnsi = (s: string) => s.replace(ANSI_RE, '');
-const clip = (s: string, n = MAX_TEXT) => (s.length > n ? s.slice(0, n) + `\n… (${s.length - n} символів обрізано)` : s);
+const clip = (s: string, n = MAX_TEXT) => (s.length > n ? s.slice(0, n) + '\n… ' + tr('({count} символів обрізано)', { count: s.length - n }) : s);
 
 function clipInput(v: unknown, depth = 0): unknown {
   if (typeof v === 'string') return clip(v);
@@ -35,7 +36,7 @@ function toolResultText(content: unknown): string {
         if (b && typeof b === 'object') {
           const o = b as Record<string, unknown>;
           if (o.type === 'text' && typeof o.text === 'string') return o.text;
-          if (o.type === 'image') return '[зображення]';
+          if (o.type === 'image') return tr('[зображення]');
         }
         return '';
       })
@@ -122,7 +123,7 @@ export class TranscriptParser {
     if (type === 'user') {
       if (obj.isMeta) return changed;
       if (obj.isCompactSummary) {
-        this.upsert({ kind: 'system', id: uuid, ts, text: 'Контекст стиснуто — розмова продовжується з короткого підсумку', tone: 'info' }, changed);
+        this.upsert({ kind: 'system', id: uuid, ts, text: tr('Контекст стиснуто — розмова продовжується з короткого підсумку'), tone: 'info' }, changed);
         this.context = this.context ? { ...this.context, usedTokens: 0 } : null;
         return changed;
       }
@@ -139,7 +140,7 @@ export class TranscriptParser {
           } else if (b?.type === 'text' && typeof b.text === 'string') {
             textParts.push(b.text);
           } else if (b?.type === 'image') {
-            textParts.push('[зображення]');
+            textParts.push(tr('[зображення]'));
           }
         }
         const text = textParts.join('\n').trim();
@@ -154,7 +155,7 @@ export class TranscriptParser {
 
     if (type === 'system') {
       if (obj.subtype === 'compact_boundary') {
-        this.upsert({ kind: 'system', id: uuid, ts, text: '— контекст стиснуто —', tone: 'info' }, changed);
+        this.upsert({ kind: 'system', id: uuid, ts, text: tr('— контекст стиснуто —'), tone: 'info' }, changed);
       } else if (typeof obj.content === 'string' && obj.content.trim()) {
         const text = stripAnsi(obj.content).trim();
         const out = tag(text, 'local-command-stdout');
@@ -194,11 +195,11 @@ export class TranscriptParser {
     const bashErr = tag(s, 'bash-stderr');
     if (bashOut !== null || bashErr !== null) {
       const text = stripAnsi([bashOut, bashErr].filter(Boolean).join('\n')).trim();
-      this.upsert({ kind: 'system', id: uuid, ts, text: clip(text || '(порожній вивід)'), tone: bashErr && !bashOut ? 'error' : 'output' }, changed);
+      this.upsert({ kind: 'system', id: uuid, ts, text: clip(text || tr('(порожній вивід)')), tone: bashErr && !bashOut ? 'error' : 'output' }, changed);
       return;
     }
     if (/^\[Request interrupted by user/.test(s)) {
-      this.upsert({ kind: 'system', id: uuid, ts, text: 'Перервано користувачем', tone: 'info' }, changed);
+      this.upsert({ kind: 'system', id: uuid, ts, text: tr('Перервано користувачем'), tone: 'info' }, changed);
       return;
     }
     this.upsert({ kind: 'user', id: uuid, ts, text: clip(s) }, changed);

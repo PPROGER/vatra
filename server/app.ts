@@ -1,3 +1,4 @@
+import { tr } from './shared/i18n/index.js';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -79,7 +80,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
 
   app.setErrorHandler((err, _req, reply) => {
-    if (err instanceof UserError) return reply.code(err.status).send({ error: err.message });
+    if (err instanceof UserError) return reply.code(err.status).send({ error: err.message, code: err.code });
     const e = err as { statusCode?: number; validation?: unknown; message: string };
     if (e.statusCode && e.statusCode < 500) return reply.code(e.statusCode).send({ error: e.message });
     app.log.error(err);
@@ -116,7 +117,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.get('/api/projects', async () => s.listProjects());
   app.post('/api/projects', async (req) => {
     const b = (req.body ?? {}) as Body;
-    if (!str(b.repo_path ?? b.repoPath)) throw new UserError('Потрібен repo_path');
+    if (!str(b.repo_path ?? b.repoPath)) throw new UserError(tr('Потрібен repo_path'));
     return s.addProject({
       repoPath: str(b.repo_path ?? b.repoPath)!,
       name: str(b.name),
@@ -157,7 +158,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.get('/api/projects/:id/commands', async (req) => s.projectCommands(idParam(req)));
   app.post('/api/projects/:id/uploads', { bodyLimit: 30 * 1024 * 1024 }, async (req) => {
     const name = decodeURIComponent(String(req.headers['x-filename'] ?? 'file'));
-    if (!Buffer.isBuffer(req.body)) throw new UserError('Очікується application/octet-stream');
+    if (!Buffer.isBuffer(req.body)) throw new UserError(tr('Очікується application/octet-stream'));
     return s.saveDraftUpload(idParam(req), name, req.body);
   });
   app.get('/api/projects/:id/uploads/file', async (req, reply) => sendUpload(reply, s.draftUploadPath(idParam(req), str((req.query as Body).path) ?? '')));
@@ -186,7 +187,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.get('/api/tasks/:id/commands', async (req) => s.commands(idParam(req)));
   app.post('/api/tasks/:id/uploads', { bodyLimit: 30 * 1024 * 1024 }, async (req) => {
     const name = decodeURIComponent(String(req.headers['x-filename'] ?? 'file'));
-    if (!Buffer.isBuffer(req.body)) throw new UserError('Очікується application/octet-stream');
+    if (!Buffer.isBuffer(req.body)) throw new UserError(tr('Очікується application/octet-stream'));
     return s.saveUpload(idParam(req), name, req.body);
   });
   app.get('/api/tasks/:id/uploads/file', async (req, reply) => sendUpload(reply, s.uploadPath(idParam(req), str((req.query as Body).path) ?? '')));
@@ -303,7 +304,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         .send(
           d.dev
             ? `<p>Dev mode: open <a href="http://localhost:5173/?token=${d.token}">http://localhost:5173/?token=…</a></p>`
-            : '<p>UI не зібрано. Запусти <code>pnpm build</code>.</p>',
+            : `<p>${tr('UI не зібрано. Запусти <code>pnpm build</code>.')}</p>`,
         ),
     );
   }

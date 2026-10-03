@@ -1,5 +1,6 @@
 // Thin, explicit wrapper around the git CLI. Every operation the server does to
 // a repository goes through here, so the git-level behaviour is easy to audit.
+import { tr } from './shared/i18n/index.js';
 import { execFile } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
@@ -68,11 +69,11 @@ async function out(cwd: string, args: string[], timeout?: number): Promise<strin
 
 export async function repoRoot(path: string): Promise<string> {
   const abs = resolve(path);
-  if (!existsSync(abs)) throw new Error(`Шлях не існує: ${abs}`);
+  if (!existsSync(abs)) throw new Error(tr('Шлях не існує: {path}', { path: abs }));
   try {
     return await out(abs, ['rev-parse', '--show-toplevel']);
   } catch {
-    throw new Error(`Не git-репозиторій: ${abs}`);
+    throw new Error(tr('Не git-репозиторій: {path}', { path: abs }));
   }
 }
 
@@ -90,7 +91,7 @@ export async function detectDefaultBranch(repo: string): Promise<string> {
   for (const b of ['main', 'master']) if (await branchExists(repo, b)) return b;
   const cur = await currentBranch(repo);
   if (cur) return cur;
-  throw new Error('Не вдалося визначити основну гілку');
+  throw new Error(tr('Не вдалося визначити основну гілку'));
 }
 
 export async function branchExists(repo: string, branch: string): Promise<boolean> {
@@ -334,7 +335,7 @@ export async function merge(repo: string, branch: string, strategy: MergeStrateg
   }
   if (strategy === 'squash') {
     const staged = await run(repo, ['diff', '--cached', '--quiet'], { okCodes: [0, 1] });
-    if (staged.code === 0) return { ok: true, conflict: false, conflictedFiles: [], output: 'Немає змін для злиття' };
+    if (staged.code === 0) return { ok: true, conflict: false, conflictedFiles: [], output: tr('Немає змін для злиття') };
     await run(repo, [...id, 'commit', '--no-verify', '-m', message]);
   }
   const commit = await out(repo, ['rev-parse', 'HEAD']);

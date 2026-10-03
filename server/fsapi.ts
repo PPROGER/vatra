@@ -1,5 +1,6 @@
 // Folder picking for "Add project": native OS dialog, a directory browser
 // and a quick scan for git repositories in the usual places.
+import { tr } from './shared/i18n/index.js';
 import { execFile } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -44,7 +45,7 @@ const isGitDir = (p: string) => existsSync(join(p, '.git'));
 function shortcuts(): { label: string; path: string }[] {
   const h = homedir();
   const list = [
-    { label: 'Домівка', path: h },
+    { label: tr('Домівка'), path: h },
     { label: 'Documents', path: join(h, 'Documents') },
     { label: 'projects', path: join(h, 'Documents', 'projects') },
     { label: 'Projects', path: join(h, 'Projects') },
@@ -69,14 +70,14 @@ export function listDir(raw: string | undefined, showHidden = false): DirListing
   try {
     st = statSync(path);
   } catch {
-    throw new Error(`Папки не існує: ${path}`);
+    throw new Error(tr('Папки не існує: {path}', { path }));
   }
-  if (!st.isDirectory()) throw new Error(`Це не папка: ${path}`);
+  if (!st.isDirectory()) throw new Error(tr('Це не папка: {path}', { path }));
   let names: string[] = [];
   try {
     names = readdirSync(path);
   } catch (err) {
-    throw new Error(`Немає доступу до ${path}: ${(err as Error).message}`);
+    throw new Error(tr('Немає доступу до {path}: {error}', { path, error: (err as Error).message }));
   }
   const entries: DirEntry[] = [];
   for (const name of names) {
@@ -203,7 +204,7 @@ export async function pickFolderNative(start?: string): Promise<string | null> {
 
   if (platform === 'darwin') {
     const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const choose = `set f to choose folder with prompt "Обери git-репозиторій для Ватри" default location (POSIX file "${esc(startDir)}")`;
+    const choose = `set f to choose folder with prompt "${esc(tr('Обери git-репозиторій для Ватри'))}" default location (POSIX file "${esc(startDir)}")`;
     // Run the dialog inside System Events so it comes to the front above the browser.
     const front = ['tell application "System Events"', 'activate', choose, 'end tell', 'POSIX path of f'];
     let r = await run('osascript', front.flatMap((l) => ['-e', l]));
@@ -213,18 +214,18 @@ export async function pickFolderNative(start?: string): Promise<string | null> {
     }
     if (r.code !== 0) {
       if (/-128|User canceled|скасовано/i.test(r.err)) return null;
-      throw new Error(`Системний діалог не відкрився: ${r.err || r.code}`);
+      throw new Error(tr('Системний діалог не відкрився: {error}', { error: r.err || r.code }));
     }
     return r.out.replace(/\/$/, '') || null;
   }
 
   if (await which('zenity')) {
-    const r = await run('zenity', ['--file-selection', '--directory', '--title=Обери git-репозиторій', `--filename=${startDir}/`]);
+    const r = await run('zenity', ['--file-selection', '--directory', `--title=${tr('Обери git-репозиторій')}`, `--filename=${startDir}/`]);
     return r.code === 0 ? r.out || null : null;
   }
   if (await which('kdialog')) {
-    const r = await run('kdialog', ['--getexistingdirectory', startDir, '--title', 'Обери git-репозиторій']);
+    const r = await run('kdialog', ['--getexistingdirectory', startDir, '--title', tr('Обери git-репозиторій')]);
     return r.code === 0 ? r.out || null : null;
   }
-  throw new Error('Немає zenity або kdialog — скористайся вбудованим оглядачем');
+  throw new Error(tr('Немає zenity або kdialog — скористайся вбудованим оглядачем'));
 }

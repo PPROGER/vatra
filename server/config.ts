@@ -1,3 +1,4 @@
+import { tr } from './shared/i18n/index.js';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -77,7 +78,7 @@ export function loadConfig(paths: Paths): Config {
     try {
       fileCfg = JSON.parse(readFileSync(paths.configFile, 'utf8'));
     } catch (err) {
-      throw new Error(`Не вдалося прочитати ${paths.configFile}: ${(err as Error).message}`);
+      throw new Error(tr('Не вдалося прочитати {file}: {error}', { file: paths.configFile, error: (err as Error).message }));
     }
   } else {
     writeFileSync(paths.configFile, JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n');

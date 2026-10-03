@@ -1,5 +1,6 @@
 // The orchestrator: owns task lifecycle, talks to git, tmux, the terminal hub
 // and the diff watcher, and is the only place that changes task status.
+import { tr } from './shared/i18n/index.js';
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -23,6 +24,8 @@ export class UserError extends Error {
   constructor(
     message: string,
     public readonly status = 400,
+    /** Machine-readable reason for the UI, independent of the message language. */
+    public readonly code?: string,
   ) {
     super(message);
   }
@@ -63,7 +66,7 @@ export class TaskService {
       this.trustAsked.add(key);
       this.screen.set(taskId, '');
       this.d.chat.setMeta(taskId, {
-        permission: { kind: 'trust', tool: null, message: 'Claude вперше бачить цю папку (worktree задачі) і питає, чи довіряти її файлам.' },
+        permission: { kind: 'trust', tool: null, message: tr('Claude вперше бачить цю папку (worktree задачі) і питає, чи довіряти її файлам.') },
       });
     };
   }
@@ -91,7 +94,7 @@ export class TaskService {
 
   getProject(id: number): Project {
     const r = this.d.db.select().from(projects).where(eq(projects.id, id)).get();
-    if (!r) throw new UserError('Проєкт не знайдено', 404);
+    if (!r) throw new UserError(tr('Проєкт не знайдено'), 404);
     return toProject(r);
   }
 
@@ -106,7 +109,7 @@ export class TaskService {
     const raw = input.repoPath.trim().replace(/^~(?=$|\/)/, process.env.HOME ?? '~');
     const root = await git.repoRoot(raw);
     const existing = this.d.db.select().from(projects).where(eq(projects.repoPath, root)).get();
-    if (existing) throw new UserError(`Проєкт уже додано: ${existing.name}`, 409);
+    if (existing) throw new UserError(tr('Проєкт уже додано: {name}', { name: existing.name }), 409);
     const defaultBranch = input.defaultBranch?.trim() || (await git.detectDefaultBranch(root));
     const row = this.d.db
       .insert(projects)
@@ -147,7 +150,7 @@ export class TaskService {
       .from(tasks)
       .where(and(eq(tasks.projectId, id), inArray(tasks.status, [...OPEN_STATUSES])))
       .all();
-    if (open.length) throw new UserError(`Спочатку заверши або відкинь відкриті задачі (${open.length})`, 409);
+    if (open.length) throw new UserError(tr('Спочатку заверши або відкинь відкриті задачі ({count})', { count: open.length }), 409);
     const ids = this.d.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.projectId, id)).all().map((r) => r.id);
     if (ids.length) {
       this.d.db.delete(sessions).where(inArray(sessions.taskId, ids)).run();
@@ -165,7 +168,7 @@ export class TaskService {
 
   private row(id: number): TaskRow {
     const r = this.d.db.select().from(tasks).where(eq(tasks.id, id)).get();
-    if (!r) throw new UserError('Задачу не знайдено', 404);
+    if (!r) throw new UserError(tr('Задачу не знайдено'), 404);
     return r;
   }
 
@@ -215,10 +218,10 @@ export class TaskService {
   ): Promise<Task> {
     const project = this.getProject(projectId);
     const drafts = (input.attachments ?? []).filter((p) => this.isDraftUpload(projectId, p));
-    const title = input.title?.trim() || titleFromPrompt(input.prompt ?? '') || (drafts.length ? 'Задача з файлами' : '');
-    if (!title) throw new UserError('Напиши, що треба зробити');
+    const title = input.title?.trim() || titleFromPrompt(input.prompt ?? '') || (drafts.length ? tr('Задача з файлами') : '');
+    if (!title) throw new UserError(tr('Напиши, що треба зробити'));
     const baseBranch = input.baseBranch?.trim() || project.defaultBranch;
-    if (!(await git.branchExists(project.repoPath, baseBranch))) throw new UserError(`Гілки ${baseBranch} немає`);
+    if (!(await git.branchExists(project.repoPath, baseBranch))) throw new UserError(tr('Гілки {branch} немає', { branch: baseBranch }));
 
     const projectDir = join(this.d.paths.worktreesDir, safeDirName(project.name, project.id));
     const slug = await uniqueSlug(slugify(title), async (s) => {
@@ -335,7 +338,7 @@ export class TaskService {
         try {
           await this.launch(next.id, { initialMessage: pending });
         } catch (err) {
-          this.setStatus(next.id, 'error', `Не вдалося запустити агента: ${(err as Error).message}`);
+          this.setStatus(next.id, 'error', tr('Не вдалося запустити агента: {error}', { error: (err as Error).message }));
         }
       }
     } finally {
@@ -363,8 +366,8 @@ export class TaskService {
   private async launchInner(taskId: number, opts: { initialMessage?: string }): Promise<void> {
     const t = this.row(taskId);
     const project = this.getProject(t.projectId);
-    if (!this.d.claudeBin) throw new Error('claude CLI не знайдено. Встанови Claude Code або задай claudeBin у config.json');
-    if (!existsSync(t.worktreePath)) throw new Error(`Worktree не існує: ${t.worktreePath}`);
+    if (!this.d.claudeBin) throw new Error(tr('claude CLI не знайдено. Встанови Claude Code або задай claudeBin у config.json'));
+    if (!existsSync(t.worktreePath)) throw new Error(tr('Worktree не існує: {path}', { path: t.worktreePath }));
 
     const name = Tmux.sessionName(taskId);
     const pane = await this.d.tmux.pane(name);
@@ -448,7 +451,7 @@ export class TaskService {
     await this.d.tmux.kill(Tmux.sessionName(taskId));
     const t = this.row(taskId);
     if (LIVE.includes(t.status)) {
-      this.setStatus(taskId, 'review', exitCode && exitCode !== 0 ? `claude завершився з кодом ${exitCode}` : null);
+      this.setStatus(taskId, 'review', exitCode && exitCode !== 0 ? tr('claude завершився з кодом {code}', { code: exitCode }) : null);
     } else {
       this.d.emit({ type: 'task', task: this.dto(t) });
     }
@@ -457,8 +460,8 @@ export class TaskService {
 
   async restart(taskId: number): Promise<Task> {
     const t = this.row(taskId);
-    if (!OPEN_STATUSES.includes(t.status) || t.status === 'creating') throw new UserError(`Неможливо перезапустити задачу в стані ${t.status}`);
-    if (!existsSync(t.worktreePath)) throw new UserError('Worktree зник — задачу можна лише відкинути');
+    if (!OPEN_STATUSES.includes(t.status) || t.status === 'creating') throw new UserError(tr('Неможливо перезапустити задачу в стані {status}', { status: t.status }));
+    if (!existsSync(t.worktreePath)) throw new UserError(tr('Worktree зник — задачу можна лише відкинути'));
     await this.stopAgent(taskId, { keepStatus: true });
     this.setStatus(taskId, 'queued');
     await this.dequeue();
@@ -506,8 +509,8 @@ export class TaskService {
   async sendMessage(taskId: number, text: string, attachments: string[] = []): Promise<{ delivered: 'typed' | 'relaunch' }> {
     const t = this.row(taskId);
     const files = attachments.filter((p) => this.isUpload(taskId, p));
-    if (!text.trim() && !files.length) throw new UserError('Порожнє повідомлення');
-    if (!OPEN_STATUSES.includes(t.status) || t.status === 'creating') throw new UserError(`Задача в стані ${t.status}`);
+    if (!text.trim() && !files.length) throw new UserError(tr('Порожнє повідомлення'));
+    if (!OPEN_STATUSES.includes(t.status) || t.status === 'creating') throw new UserError(tr('Задача в стані {status}', { status: t.status }));
     let full = text.trim();
     if (files.length) full = withAttachments(full, files);
     const name = Tmux.sessionName(taskId);
@@ -540,10 +543,10 @@ export class TaskService {
     };
     for (let i = 1; i <= 9; i++) map[String(i)] = [String(i)];
     const seq = map[key];
-    if (!seq) throw new UserError(`Невідома клавіша: ${key}`);
+    if (!seq) throw new UserError(tr('Невідома клавіша: {key}', { key }));
     const name = Tmux.sessionName(taskId);
     const p = await this.d.tmux.pane(name);
-    if (!p.exists || p.dead) throw new UserError('Агент не запущений', 409);
+    if (!p.exists || p.dead) throw new UserError(tr('Агент не запущений'), 409);
     await this.d.tmux.sendKeys(name, seq);
     if (['allow', 'allow-always', 'deny', 'escape', 'interrupt'].includes(key)) this.d.chat.setMeta(taskId, { permission: null });
   }
@@ -590,7 +593,7 @@ export class TaskService {
   }
 
   draftUploadPath(projectId: number, p: string): string {
-    if (!this.isDraftUpload(projectId, p)) throw new UserError('Файл не знайдено', 404);
+    if (!this.isDraftUpload(projectId, p)) throw new UserError(tr('Файл не знайдено'), 404);
     return p;
   }
 
@@ -614,7 +617,7 @@ export class TaskService {
   renameTask(taskId: number, title: string): Task {
     this.row(taskId);
     const t = title.trim();
-    if (!t) throw new UserError('Порожня назва');
+    if (!t) throw new UserError(tr('Порожня назва'));
     return this.update(taskId, { title: t.slice(0, 200) });
   }
 
@@ -624,7 +627,7 @@ export class TaskService {
   }
 
   private writeUpload(dir: string, rawName: string, data: Buffer): { name: string; path: string; size: number } {
-    if (!data.length) throw new UserError('Порожній файл');
+    if (!data.length) throw new UserError(tr('Порожній файл'));
     const clean = basename(rawName || 'file').replace(/[^\p{L}\p{N}._ -]+/gu, '_').slice(-120) || 'file';
     mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
@@ -635,7 +638,7 @@ export class TaskService {
 
   /** Absolute path of an uploaded file if it belongs to the task (for previews). */
   uploadPath(taskId: number, p: string): string {
-    if (!this.isUpload(taskId, p)) throw new UserError('Файл не знайдено', 404);
+    if (!this.isUpload(taskId, p)) throw new UserError(tr('Файл не знайдено'), 404);
     return p;
   }
 
@@ -670,7 +673,7 @@ export class TaskService {
 
   async onHook(taskId: number, token: string, event: string, payload: Record<string, unknown>): Promise<void> {
     const t = this.d.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-    if (!t || t.hookToken !== token) throw new UserError('Невірний hook token', 403);
+    if (!t || t.hookToken !== token) throw new UserError(tr('Невірний hook token'), 403);
 
     const sid = typeof payload.session_id === 'string' ? payload.session_id : null;
     const transcript = typeof payload.transcript_path === 'string' ? payload.transcript_path : null;
@@ -702,7 +705,7 @@ export class TaskService {
       case 'SessionStart':
         if (this.startsWithPrompt.delete(taskId)) {
           this.update(taskId, { status: 'running', lastMessage: null });
-          chat.setMeta(taskId, { permission: null, activity: 'Думає…' });
+          chat.setMeta(taskId, { permission: null, activity: tr('Думає…') });
         } else {
           this.update(taskId, { status: 'idle', lastMessage: null });
           chat.setMeta(taskId, { permission: null, activity: null });
@@ -710,7 +713,7 @@ export class TaskService {
         break;
       case 'UserPromptSubmit':
         if (t.status !== 'running' || t.lastMessage) this.update(taskId, { status: 'running', lastMessage: null });
-        chat.setMeta(taskId, { permission: null, activity: 'Думає…' });
+        chat.setMeta(taskId, { permission: null, activity: tr('Думає…') });
         break;
       case 'PreToolUse': {
         const tool = typeof payload.tool_name === 'string' ? payload.tool_name : 'tool';
@@ -722,7 +725,7 @@ export class TaskService {
       }
       case 'PostToolUse':
         if (t.status !== 'running' || t.lastMessage) this.update(taskId, { status: 'running', lastMessage: null });
-        chat.setMeta(taskId, { permission: null, activity: 'Думає…' });
+        chat.setMeta(taskId, { permission: null, activity: tr('Думає…') });
         chat.poke(taskId);
         break;
       case 'Stop': {
@@ -731,17 +734,17 @@ export class TaskService {
         void this.syncBranch(taskId).catch(() => {});
         chat.setMeta(taskId, { permission: null, activity: null });
         chat.poke(taskId);
-        this.alert(taskId, `Агент «${t.title}» чекає`, 'Завершив хід і чекає на тебе');
+        this.alert(taskId, tr('Агент «{title}» чекає', { title: t.title }), tr('Завершив хід і чекає на тебе'));
         break;
       }
       case 'Notification': {
-        const msg = typeof payload.message === 'string' ? payload.message : 'Потрібна твоя увага';
+        const msg = typeof payload.message === 'string' ? payload.message : tr('Потрібна твоя увага');
         const kind = typeof payload.notification_type === 'string' ? payload.notification_type : '';
         this.update(taskId, { status: 'idle', lastMessage: msg });
         const isPermission = kind === 'permission_prompt' || (!kind && /permission|дозв/i.test(msg));
         if (isPermission) chat.setMeta(taskId, { permission: { message: msg, tool: this.lastTool.get(taskId) ?? null } });
         // idle_prompt repeats the Stop notification a minute later — don't ping twice
-        if (kind !== 'idle_prompt') this.alert(taskId, `Агент «${t.title}» чекає`, msg);
+        if (kind !== 'idle_prompt') this.alert(taskId, tr('Агент «{title}» чекає', { title: t.title }), msg);
         break;
       }
       default:
@@ -758,8 +761,8 @@ export class TaskService {
 
   async diff(taskId: number, mode: DiffMode): Promise<DiffResult> {
     const t = this.row(taskId);
-    if (!t.baseCommit) throw new UserError('Задача ще створюється');
-    if (!existsSync(t.worktreePath)) throw new UserError('Worktree не існує', 410);
+    if (!t.baseCommit) throw new UserError(tr('Задача ще створюється'));
+    if (!existsSync(t.worktreePath)) throw new UserError(tr('Worktree не існує'), 410);
     const fresh = await this.syncBranch(taskId);
     return git.diff(t.worktreePath, t.baseCommit, fresh.branch, mode);
   }
@@ -775,21 +778,21 @@ export class TaskService {
     taskId: number,
     strategy: git.MergeStrategy,
     opts: { push?: boolean } = {},
-  ): Promise<{ task: Task; conflict?: string[]; message: string; pushed?: boolean }> {
+  ): Promise<{ task: Task; conflict?: string[]; message: string; pushed?: boolean; pushFailed?: boolean }> {
     const t = await this.syncBranch(taskId);
     const project = this.getProject(t.projectId);
     if (!SETTLED_STATUSES.includes(t.status)) {
-      throw new UserError(t.status === 'running' ? 'Агент зараз працює — дочекайся паузи або зупини його' : `Неможливо злити задачу в стані ${t.status}`, 409);
+      throw new UserError(t.status === 'running' ? tr('Агент зараз працює — дочекайся паузи або зупини його') : tr('Неможливо злити задачу в стані {status}', { status: t.status }), 409);
     }
-    if (!existsSync(t.worktreePath)) throw new UserError('Worktree не існує', 410);
+    if (!existsSync(t.worktreePath)) throw new UserError(tr('Worktree не існує'), 410);
     if (!(await git.currentBranch(t.worktreePath))) {
-      throw new UserError('У worktree агента відʼєднаний HEAD (detached) — попроси агента перейти на свою гілку або створити нову, і спробуй ще раз.', 409);
+      throw new UserError(tr('У worktree агента відʼєднаний HEAD (detached) — попроси агента перейти на свою гілку або створити нову, і спробуй ще раз.'), 409);
     }
     const repo = project.repoPath;
     const base = t.baseBranch;
 
     return this.withLock(repo, async () => {
-      if (opts.push && !(await git.hasRemote(repo))) throw new UserError('У репозиторію немає remote (origin) — пушити нікуди', 409);
+      if (opts.push && !(await git.hasRemote(repo))) throw new UserError(tr('У репозиторію немає remote (origin) — пушити нікуди'), 409);
 
       // where is the base branch checked out?
       const holder = (await git.listWorktrees(repo)).find((w) => w.branch === base);
@@ -799,7 +802,7 @@ export class TaskService {
         dir = holder.path;
         const dirty = await git.statusPorcelain(dir, false);
         if (dirty.length) {
-          throw new UserError(`Гілка ${base} відкрита в ${dir} і там є незакомічені зміни (${dirty.length} файлів). Закоміть або сховай їх (git stash) і спробуй ще раз.`, 409);
+          throw new UserError(tr('Гілка {branch} відкрита в {dir} і там є незакомічені зміни ({count} файлів). Закоміть або сховай їх (git stash) і спробуй ще раз.', { branch: base, dir, count: dirty.length }), 409);
         }
       } else {
         temp = join(this.d.paths.runDir, `merge-${taskId}-${Date.now()}`);
@@ -810,7 +813,7 @@ export class TaskService {
       try {
         await git.commitAll(t.worktreePath, `${t.title}\n\nUncommitted changes committed by Vatra before merge.`);
         const ahead = await git.aheadCount(repo, base, t.branch);
-        if (ahead === 0) throw new UserError(`У гілці ${t.branch} немає нових комітів відносно ${base}`, 409);
+        if (ahead === 0) throw new UserError(tr('У гілці {branch} немає нових комітів відносно {base}', { branch: t.branch, base }), 409);
 
         if (opts.push) {
           // bring the base up to date with origin first, so the push is a fast-forward
@@ -821,7 +824,7 @@ export class TaskService {
               if (await git.isAncestor(dir, 'HEAD', remoteRef)) {
                 await git.run(dir, ['merge', '--ff-only', '--quiet', remoteRef]);
               } else {
-                throw new UserError(`Локальна ${base} і origin/${base} розійшлися. Синхронізуй їх вручну (git pull --rebase) і спробуй ще раз.`, 409);
+                throw new UserError(tr('Локальна {base} і origin/{base} розійшлися. Синхронізуй їх вручну (git pull --rebase) і спробуй ще раз.', { base }), 409);
               }
             }
           }
@@ -831,10 +834,14 @@ export class TaskService {
         const res = await git.merge(dir, t.branch, strategy, message);
         if (!res.ok) {
           const files = res.conflictedFiles;
-          const reason = res.conflict ? `Конфлікт злиття: ${files.join(', ') || 'див. вивід git'}` : `git merge не вдався: ${res.output.slice(0, 500)}`;
+          const reason = res.conflict
+            ? tr('Конфлікт злиття: {files}', { files: files.join(', ') || tr('див. вивід git') })
+            : tr('git merge не вдався: {output}', { output: res.output.slice(0, 500) });
           this.setStatus(taskId, 'review', reason);
           if (res.conflict) {
-            const ask = `Злиття гілки ${t.branch} у ${base} дало конфлікт${files.length ? ` у файлах: ${files.join(', ')}` : ''}. Зроби rebase на ${base} (git rebase ${base}), розвʼяжи конфлікти, перевір що все працює і закоміть результат.`;
+            const ask = files.length
+              ? tr('Злиття гілки {branch} у {base} дало конфлікт у файлах: {files}. Зроби rebase на {base} (git rebase {base}), розвʼяжи конфлікти, перевір що все працює і закоміть результат.', { branch: t.branch, base, files: files.join(', ') })
+              : tr('Злиття гілки {branch} у {base} дало конфлікт. Зроби rebase на {base} (git rebase {base}), розвʼяжи конфлікти, перевір що все працює і закоміть результат.', { branch: t.branch, base });
             await this.sendMessage(taskId, ask).catch((e) => this.log(`[task ${taskId}] could not message agent: ${e.message}`));
           }
           return { task: this.getTask(taskId), conflict: files, message: reason };
@@ -845,13 +852,13 @@ export class TaskService {
         if (opts.push) {
           const r = await git.pushBranch(dir, base);
           pushed = r.code === 0;
-          if (!pushed) pushNote = ` Але push не пройшов: ${(r.stderr || r.stdout).trim().split('\n').slice(-2).join(' ')}`;
+          if (!pushed) pushNote = tr('Але push не пройшов: {error}', { error: (r.stderr || r.stdout).trim().split('\n').slice(-2).join(' ') });
         }
 
         await this.cleanup(taskId, { forceBranchDelete: strategy === 'squash' });
-        const task = this.update(taskId, { status: 'merged', statusReason: pushNote ? pushNote.trim() : null, mergedAt: now() });
+        const task = this.update(taskId, { status: 'merged', statusReason: pushNote || null, mergedAt: now() });
         this.log(`[task ${taskId}] merged (${strategy}) into ${base}${pushed ? ' and pushed' : ''}`);
-        return { task, pushed, message: pushed ? `Злито в ${base} і запушено в origin` : `Злито в ${base}${pushNote}` };
+        return { task, pushed, pushFailed: !!opts.push && !pushed, message: pushed ? tr('Злито в {base} і запушено в origin', { base }) : `${tr('Злито в {base}', { base })}${pushNote ? ' ' + pushNote : ''}` };
       } finally {
         if (temp) await git.removeWorktree(repo, temp).catch(() => {});
       }
@@ -863,9 +870,9 @@ export class TaskService {
    * stops the agent, removes the worktree, archives the chat. The branch is kept
    * unless it is already on origin or merged into the base, so no work is lost.
    */
-  async finish(taskId: number, opts: { force?: boolean } = {}): Promise<{ task: Task; message: string }> {
+  async finish(taskId: number, opts: { force?: boolean } = {}): Promise<{ task: Task; message: string; note: string }> {
     const t = await this.syncBranch(taskId);
-    if (!OPEN_STATUSES.includes(t.status) || t.status === 'creating') throw new UserError('Задача вже закрита', 409);
+    if (!OPEN_STATUSES.includes(t.status) || t.status === 'creating') throw new UserError(tr('Задача вже закрита'), 409);
     const project = this.getProject(t.projectId);
     const repo = project.repoPath;
     const hasWt = existsSync(t.worktreePath);
@@ -873,7 +880,7 @@ export class TaskService {
     if (hasWt && !opts.force) {
       const dirty = await git.statusPorcelain(t.worktreePath);
       if (dirty.length) {
-        throw new UserError(`У worktree є незакомічені зміни (${dirty.length} файлів) — вони пропадуть. Закоміть їх через агента або підтверди завершення.`, 409);
+        throw new UserError(tr('У worktree є незакомічені зміни ({count} файлів) — вони пропадуть. Закоміть їх через агента або підтверди завершення.', { count: dirty.length }), 409, 'uncommitted');
       }
     }
 
@@ -890,9 +897,9 @@ export class TaskService {
         const owned = await this.ownsBranch(repo, t);
         const ahead = await git.aheadCount(repo, t.baseBranch, t.branch).catch(() => 1);
         if ((remote === sha || merged) && owned) keep = false;
-        if (keep) note = `Гілку ${t.branch} залишено${remote ? ' (на origin інша версія)' : ' (її немає на origin)'}.`;
-        else if (ahead === 0) note = `Нових комітів у ${t.branch} не було — гілку прибрано.`;
-        else note = `Гілка ${t.branch} уже ${remote === sha ? 'на origin' : `у ${t.baseBranch}`} — локальну копію прибрано.`;
+        if (keep) note = remote ? tr('Гілку {branch} залишено (на origin інша версія).', { branch: t.branch }) : tr('Гілку {branch} залишено (її немає на origin).', { branch: t.branch });
+        else if (ahead === 0) note = tr('Нових комітів у {branch} не було — гілку прибрано.', { branch: t.branch });
+        else note = remote === sha ? tr('Гілка {branch} уже на origin — локальну копію прибрано.', { branch: t.branch }) : tr('Гілка {branch} уже у {base} — локальну копію прибрано.', { branch: t.branch, base: t.baseBranch });
       }
 
       await this.stopAgent(taskId, { keepStatus: true });
@@ -905,13 +912,13 @@ export class TaskService {
 
       const task = this.update(taskId, { status: 'done', statusReason: note || null, mergedAt: now() });
       this.log(`[task ${taskId}] finished by hand. ${note}`);
-      return { task, message: `Задачу завершено. ${note}`.trim() };
+      return { task, note, message: tr('Задачу завершено. {note}', { note }).trim() };
     });
   }
 
   async discard(taskId: number): Promise<Task> {
     const t = this.row(taskId);
-    if (CLOSED_STATUSES.includes(t.status)) throw new UserError('Задача вже закрита', 409);
+    if (CLOSED_STATUSES.includes(t.status)) throw new UserError(tr('Задача вже закрита'), 409);
     const project = this.getProject(t.projectId);
     await this.withLock(project.repoPath, () => this.cleanup(taskId, { forceBranchDelete: true }));
     return this.update(taskId, { status: 'discarded', statusReason: null });
@@ -963,7 +970,7 @@ export class TaskService {
         (err, stdout, stderr) => {
           if (!err) return res(String(stdout).trim());
           const msg = String(stderr).trim() || err.message;
-          if ((err as NodeJS.ErrnoException).code === 'ENOENT') return rej(new UserError('gh (GitHub CLI) не встановлено: brew install gh && gh auth login'));
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') return rej(new UserError(tr('gh (GitHub CLI) не встановлено: brew install gh && gh auth login')));
           rej(new UserError(`gh ${args[0]} ${args[1] ?? ''}: ${msg}`));
         },
       );
@@ -977,15 +984,15 @@ export class TaskService {
   async pr(taskId: number): Promise<{ url: string | null; created: boolean; manual?: boolean; output: string; task: Task }> {
     const t = await this.syncBranch(taskId);
     const project = this.getProject(t.projectId);
-    if (t.status === 'running') throw new UserError('Агент зараз працює — дочекайся паузи', 409);
-    if (!existsSync(t.worktreePath)) throw new UserError('Worktree не існує', 410);
+    if (t.status === 'running') throw new UserError(tr('Агент зараз працює — дочекайся паузи'), 409);
+    if (!existsSync(t.worktreePath)) throw new UserError(tr('Worktree не існує'), 410);
     if (!(await git.currentBranch(t.worktreePath))) {
-      throw new UserError('У worktree агента відʼєднаний HEAD (detached) — попроси агента перейти на свою гілку.', 409);
+      throw new UserError(tr('У worktree агента відʼєднаний HEAD (detached) — попроси агента перейти на свою гілку.'), 409);
     }
-    if (!(await git.hasRemote(project.repoPath))) throw new UserError('У репозиторію немає remote (origin) — PR створити нікуди', 409);
+    if (!(await git.hasRemote(project.repoPath))) throw new UserError(tr('У репозиторію немає remote (origin) — PR створити нікуди'), 409);
     await git.commitAll(t.worktreePath, `${t.title}\n\nCommitted by Vatra before opening a PR.`);
     const ahead = await git.aheadCount(project.repoPath, t.baseBranch, t.branch);
-    if (ahead === 0) throw new UserError(`У гілці ${t.branch} немає нових комітів відносно ${t.baseBranch}`, 409);
+    if (ahead === 0) throw new UserError(tr('У гілці {branch} немає нових комітів відносно {base}', { branch: t.branch, base: t.baseBranch }), 409);
     // agents rebase on request, so a plain push may be rejected; lease keeps it safe
     const pushOut = await git.push(t.worktreePath, t.branch);
 
@@ -999,7 +1006,7 @@ export class TaskService {
       return { url: compare, created: false, manual: true, output: pushOut, task: this.getTask(taskId) };
     }
     if (!url || t.prState === 'CLOSED') {
-      const body = `${t.prompt ? `**Задача для агента:**\n\n> ${t.prompt.replace(/\n/g, '\n> ')}\n\n` : ''}Створено у Ватрі (Claude Code).`;
+      const body = `${t.prompt ? `**${tr('Задача для агента:')}**\n\n> ${t.prompt.replace(/\n/g, '\n> ')}\n\n` : ''}${tr('Створено у Ватрі (Claude Code).')}`;
       try {
         out = await this.gh(['pr', 'create', '--head', t.branch, '--base', t.baseBranch, '--title', t.title, '--body', body], t.worktreePath);
         url = out.match(/https?:\/\/\S+/)?.[0] ?? null;
@@ -1018,7 +1025,7 @@ export class TaskService {
   /** Asks GitHub about the PR; a merged PR closes the task and cleans up locally. */
   async checkPr(taskId: number): Promise<Task> {
     const t = this.row(taskId);
-    if (!t.prUrl) throw new UserError('PR для задачі ще не створено', 409);
+    if (!t.prUrl) throw new UserError(tr('PR для задачі ще не створено'), 409);
     const cwd = existsSync(t.worktreePath) ? t.worktreePath : this.getProject(t.projectId).repoPath;
     const state = (await this.gh(['pr', 'view', t.prUrl, '--json', 'state', '--jq', '.state'], cwd)).trim().toUpperCase();
     if (state === t.prState && state !== 'MERGED') return this.dto(t);
@@ -1027,10 +1034,10 @@ export class TaskService {
       await this.withLock(project.repoPath, () => this.cleanup(taskId, { forceBranchDelete: true }));
       await git.fetchQuiet(project.repoPath);
       const task = this.update(taskId, { status: 'merged', prState: 'MERGED', mergedAt: now(), statusReason: null });
-      this.alert(taskId, `PR злито: ${t.title}`, 'Агента зупинено, локальну гілку й worktree прибрано');
+      this.alert(taskId, tr('PR злито: {title}', { title: t.title }), tr('Агента зупинено, локальну гілку й worktree прибрано'));
       return task;
     }
-    return this.update(taskId, { prState: state, statusReason: state === 'CLOSED' ? 'PR закрито без злиття' : t.statusReason });
+    return this.update(taskId, { prState: state, statusReason: state === 'CLOSED' ? tr('PR закрито без злиття') : t.statusReason });
   }
 
   private pollingPrs = false;
@@ -1079,7 +1086,7 @@ export class TaskService {
 
   async open(taskId: number, app: OpenTarget): Promise<void> {
     const t = this.row(taskId);
-    if (!existsSync(t.worktreePath)) throw new UserError('Worktree не існує', 410);
+    if (!existsSync(t.worktreePath)) throw new UserError(tr('Worktree не існує'), 410);
     await openIn(app, t.worktreePath);
   }
 
@@ -1106,12 +1113,12 @@ export class TaskService {
       const wtExists = existsSync(t.worktreePath);
 
       if (t.status === 'creating') {
-        this.setStatus(t.id, 'error', 'Сервер перезапустився під час створення задачі — відкинь її і створи знову');
+        this.setStatus(t.id, 'error', tr('Сервер перезапустився під час створення задачі — відкинь її і створи знову'));
         continue;
       }
       if (!wtExists) {
         if (pane.exists) await this.d.tmux.kill(name);
-        this.setStatus(t.id, 'error', `Worktree зник з диска: ${t.worktreePath}`);
+        this.setStatus(t.id, 'error', tr('Worktree зник з диска: {path}', { path: t.worktreePath }));
         continue;
       }
       if (pane.exists && !pane.dead) {
@@ -1184,7 +1191,7 @@ export class TaskService {
       await this.stopAgent(t.id, { keepStatus: true });
       const fresh = this.row(t.id);
       if (fresh.status === 'idle') {
-        this.setStatus(t.id, 'sleeping', `Агент заснув після ${minutes} хв простою — напиши в чат, щоб розбудити`);
+        this.setStatus(t.id, 'sleeping', tr('Агент заснув після {minutes} хв простою — напиши в чат, щоб розбудити', { minutes }));
       }
       await this.dequeue();
     }
@@ -1226,10 +1233,15 @@ export class TaskService {
     const info = this.baseAhead.get(taskId);
     const ref = info?.ref ?? t.baseBranch;
     const fetchCmd = ref.startsWith('origin/') ? 'git fetch origin && ' : '';
+    const moved = info?.count
+      ? tr('Базова гілка {ref} пішла вперед на {count} коміт(ів).', { ref, count: info.count })
+      : tr('Базова гілка {ref} пішла вперед.', { ref });
     const text =
-      `Базова гілка ${ref} пішла вперед${info?.count ? ` на ${info.count} коміт(ів)` : ''}. ` +
-      `Зроби rebase своєї гілки на неї (${fetchCmd}git rebase ${ref}), розвʼяжи конфлікти, якщо будуть, ` +
-      `перевір, що все збирається і тести проходять, і коротко напиши, що змінилось.`;
+      moved +
+      ' ' +
+      tr('Зроби rebase своєї гілки на неї ({cmd}), розвʼяжи конфлікти, якщо будуть, перевір, що все збирається і тести проходять, і коротко напиши, що змінилось.', {
+        cmd: `${fetchCmd}git rebase ${ref}`,
+      });
     const r = await this.sendMessage(taskId, text);
     return { ...r, ref };
   }
@@ -1265,7 +1277,7 @@ export function titleFromPrompt(prompt: string): string {
 
 /** One line, so short messages with files can still be typed instead of pasted. */
 export function withAttachments(text: string, files: string[]): string {
-  return `${text}${text ? ' ' : ''}[прикріплені файли — прочитай через Read: ${files.join(', ')}]`;
+  return `${text}${text ? ' ' : ''}[${tr('прикріплені файли — прочитай через Read: {files}', { files: files.join(', ') })}]`;
 }
 
 /** Subsequence match ranked by basename hits and path length. */
@@ -1318,7 +1330,7 @@ export function buildLauncher(o: {
       `printf '\\033[36m[vatra] setup: %s\\033[0m\\n' ${shQuote(o.setupScript)}`,
       `/bin/sh -c ${shQuote(o.setupScript)}`,
       'rc=$?',
-      `if [ "$rc" -ne 0 ]; then printf '\\033[31m[vatra] setup завершився з кодом %s — агент все одно стартує\\033[0m\\n' "$rc"; sleep 2; fi`,
+      `if [ "$rc" -ne 0 ]; then printf ${shQuote(`\\033[31m[vatra] ${tr('setup завершився з кодом %s — агент все одно стартує')}\\033[0m\\n`)} "$rc"; sleep 2; fi`,
     );
   }
   lines.push(`exec ${[o.claudeBin, ...o.args].map(shQuote).join(' ')}`);

@@ -2,6 +2,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { SlashCommand } from '../../../server/shared/types';
 import { api, type ComposerScope } from '../api';
+import { t } from '../i18n';
 import { AttachmentChips } from './ChatItems';
 import { cx } from './ui';
 
@@ -28,7 +29,7 @@ export const Composer = forwardRef<ComposerHandle, {
   /** Return false (or a promise of false) to put the text back, e.g. when creating failed. */
   onSend: (text: string, attachments: Attachment[]) => void | boolean | Promise<void | boolean>;
   onError: (m: string) => void;
-}>(function Composer({ scope, disabled, autoFocus, placeholder, sendLabel = 'Надіслати', onSend, onError }, ref) {
+}>(function Composer({ scope, disabled, autoFocus, placeholder, sendLabel = t('Надіслати'), onSend, onError }, ref) {
   const ep = useMemo(() => api.composer(scope), [scope.kind, scope.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -64,7 +65,7 @@ export const Composer = forwardRef<ComposerHandle, {
       ep
         .upload(named)
         .then((r) => setAttachments((a) => [...a, { path: r.path, name: r.name, preview }]))
-        .catch((e) => onError(`Не вдалося завантажити ${f.name}: ${e.message}`))
+        .catch((e) => onError(t('Не вдалося завантажити {name}: {error}', { name: f.name, error: e.message })))
         .finally(() => setUploading((n) => n - 1));
     }
   };
@@ -200,7 +201,7 @@ export const Composer = forwardRef<ComposerHandle, {
                   {c.args && <span className="font-mono text-[11px] text-faint">{c.args}</span>}
                   <span className="text-[12px] text-muted truncate">{c.description}</span>
                   <span className="ml-auto flex gap-1 shrink-0">
-                    {c.interactive && <span className="text-[10px] rounded border border-amber-700/50 text-amber-300/90 px-1">термінал</span>}
+                    {c.interactive && <span className="text-[10px] rounded border border-amber-700/50 text-amber-300/90 px-1">{t('термінал')}</span>}
                     {c.source !== 'builtin' && <span className="text-[10px] rounded border border-line-2 text-faint px-1">{c.source}</span>}
                   </span>
                 </button>
@@ -257,7 +258,7 @@ export const Composer = forwardRef<ComposerHandle, {
         <div className="flex items-center gap-1 px-2 pb-2">
           <button
             className="size-7 grid place-items-center rounded-md text-muted hover:text-fg hover:bg-panel-2 cursor-pointer"
-            title="Прикріпити файли (або перетягни / встав з буфера)"
+            title={t('Прикріпити файли (або перетягни / встав з буфера)')}
             onClick={() => fileInput.current?.click()}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -274,10 +275,10 @@ export const Composer = forwardRef<ComposerHandle, {
               e.target.value = '';
             }}
           />
-          <button className="h-7 px-2 rounded-md text-[12px] font-mono text-muted hover:text-fg hover:bg-panel-2 cursor-pointer" title="Slash-команди" onClick={() => (setText('/'), updatePopup('/', 1), ta.current?.focus())}>
+          <button className="h-7 px-2 rounded-md text-[12px] font-mono text-muted hover:text-fg hover:bg-panel-2 cursor-pointer" title={t('Slash-команди')} onClick={() => (setText('/'), updatePopup('/', 1), ta.current?.focus())}>
             /
           </button>
-          <button className="h-7 px-2 rounded-md text-[12px] font-mono text-muted hover:text-fg hover:bg-panel-2 cursor-pointer" title="Згадати файл з репо" onClick={() => {
+          <button className="h-7 px-2 rounded-md text-[12px] font-mono text-muted hover:text-fg hover:bg-panel-2 cursor-pointer" title={t('Згадати файл з репо')} onClick={() => {
             const next = text + (text && !text.endsWith(' ') ? ' @' : '@');
             setText(next);
             updatePopup(next, next.length);
@@ -286,10 +287,10 @@ export const Composer = forwardRef<ComposerHandle, {
             @
           </button>
           <span className="ml-1 text-[11px] text-faint truncate">
-            {mode === 'bash' && 'bash-режим: команда виконається в shell агента'}
-            {mode === 'command' && (matched ? `${matched.description}${matched.interactive ? ' · відкриється в терміналі' : ''}` : 'slash-команда')}
-            {mode === 'memory' && 'запис у памʼять (CLAUDE.md)'}
-            {!mode && 'Enter — надіслати · Shift+Enter — новий рядок · ↑ — історія'}
+            {mode === 'bash' && t('bash-режим: команда виконається в shell агента')}
+            {mode === 'command' && (matched ? `${matched.description}${matched.interactive ? ` · ${t('відкриється в терміналі')}` : ''}` : t('slash-команда'))}
+            {mode === 'memory' && t('запис у памʼять (CLAUDE.md)')}
+            {!mode && t('Enter — надіслати · Shift+Enter — новий рядок · ↑ — історія')}
           </span>
           <button
             onClick={send}

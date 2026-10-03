@@ -3,6 +3,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useEffect, useRef, useState } from 'react';
 import { wsUrl } from '../api';
+import { t } from '../i18n';
 
 const THEME = {
   background: '#0b0d10',
@@ -109,7 +110,7 @@ export function Terminal({ taskId, alive }: { taskId: number; alive: boolean }) 
     <div className="relative h-full w-full bg-bg">
       <div ref={host} className="h-full w-full" />
       {conn !== 'open' && (
-        <div className="absolute top-2 right-3 text-[11px] text-faint">{conn === 'connecting' ? 'підключення…' : 'відʼєднано'}</div>
+        <div className="absolute top-2 right-3 text-[11px] text-faint">{conn === 'connecting' ? t('підключення…') : t('відʼєднано')}</div>
       )}
     </div>
   );
