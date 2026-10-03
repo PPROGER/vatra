@@ -44,6 +44,20 @@ def hook(event, extra=None):
             subprocess.run(h["command"], shell=True, input=json.dumps(payload).encode())
 
 def work(text):
+    if "echo vatra-ok > hello.txt" in text:
+        hook("UserPromptSubmit", {"prompt": text})
+        record({"type": "user", "message": {"role": "user", "content": text}})
+        tool_input = {"command": "echo vatra-ok > hello.txt"}
+        hook("PreToolUse", {"tool_name": "Bash", "tool_input": tool_input})
+        hook("Notification", {"message": "Claude needs your permission to use Bash", "notification_type": "permission_prompt"})
+        if sys.stdin.readline().strip():
+            return
+        with open("hello.txt", "w") as f:
+            f.write("vatra-ok\n")
+        hook("PostToolUse", {"tool_name": "Bash", "tool_input": tool_input})
+        assistant([{"type": "text", "text": "done"}])
+        hook("Stop")
+        return
     if text.startswith("/"):
         name = text.split()[0]
         rest = text[len(name):].strip()
@@ -78,7 +92,7 @@ def work(text):
 
 print(f"[fake-claude] session {SID} args={args!r} PORT={os.environ.get('PORT')} API_KEY={'set' if os.environ.get('ANTHROPIC_API_KEY') else 'unset'}", flush=True)
 print("MODE=RESUMED" if "--resume" in args else "MODE=FRESH", flush=True)
-if any("trust-me" in a for a in args) and "--resume" not in args:
+if any(("trust-me" in a or "automated check of the Vatra" in a) for a in args) and "--resume" not in args:
     print("Do you trust the files in this folder?  1. Yes, proceed  2. No, exit", flush=True)
     if sys.stdin.readline().strip():
         sys.exit(1)
@@ -91,7 +105,25 @@ time.sleep(0.4)
 positional = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--resume")]
 if positional:
     work(positional[-1])
+# like the real TUI, ask the terminal for bracketed paste so multi-line pastes arrive as one message
+sys.stdout.write("\x1b[?2004h"); sys.stdout.flush()
+paste = None
 for line in sys.stdin:
+    line = line.rstrip("\n")
+    if "\x1b[200~" in line:
+        paste = []
+        line = line.split("\x1b[200~", 1)[1]
+    if paste is not None:
+        if "\x1b[201~" in line:
+            paste.append(line.split("\x1b[201~", 1)[0])
+            text = "\n".join(paste).strip()
+            paste = None
+            # the Enter that submits comes right after the paste
+            if text:
+                work(text)
+        else:
+            paste.append(line)
+        continue
     line = line.strip()
     if line == "exit":
         break

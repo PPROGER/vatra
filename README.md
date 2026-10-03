@@ -39,6 +39,7 @@ vatra start --open     # → http://localhost:4317
 | `vatra start [--open]` | start the server (UI at http://localhost:4317) |
 | `vatra open` | open the UI in your browser |
 | `vatra doctor` | check git, tmux, claude, gh and native modules |
+| `vatra selftest` | drive a real `claude` through the running server and check trust prompt, hooks, permissions, chat (uses a few requests of your plan) |
 | `vatra update` | `git pull`, install, build, restart the background service |
 | `vatra install-service` / `uninstall-service` | run in the background (launchd / `systemd --user`) |
 

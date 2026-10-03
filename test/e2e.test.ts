@@ -262,6 +262,14 @@ describe('e2e', () => {
       return c.items.some((i: any) => i.kind === 'user' && i.command === '/compact' && i.text === '/compact focus on tests') && c.items.some((i: any) => i.kind === 'system' && i.text === 'ran /compact');
     }, 'slash command in chat');
 
+    // a multi-line message goes in as one bracketed paste, i.e. one user message
+    await api('POST', `/api/tasks/${t.id}/message`, { text: 'multi line one\nmulti line two' });
+    await waitFor(async () => {
+      const c = await api('GET', `/api/tasks/${t.id}/chat`);
+      return c.items.some((i: any) => i.kind === 'user' && i.text === 'multi line one\nmulti line two');
+    }, 'multi-line message as one');
+    await waitStatus(t.id, 'idle');
+
     // permission prompt → chat meta → allow via keys
     await api('POST', `/api/tasks/${t.id}/message`, { text: 'ask-permission please' });
     await waitFor(async () => (await api('GET', `/api/tasks/${t.id}/chat`)).permission?.tool?.startsWith('Write:'), 'permission meta');

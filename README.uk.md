@@ -31,6 +31,7 @@ vatra start --open
 | `vatra start [--open]` | запустити сервер, UI на http://localhost:4317 |
 | `vatra open` | відкрити UI в браузері |
 | `vatra doctor` | перевірити git, tmux, claude, gh, нативні модулі |
+| `vatra selftest` | прогнати справжнього `claude` через запущену Ватру: довіра до папки, хуки, дозволи, чат (кілька запитів до підписки) |
 | `vatra update` | `git pull` + install + build, перезапуск сервісу |
 | `vatra install-service` / `uninstall-service` | автозапуск у фоні (launchd / `systemd --user`) |
 

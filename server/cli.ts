@@ -15,6 +15,7 @@ import { TaskService } from './service.js';
 import type { ServerEvent, ServerInfo } from './shared/types.js';
 import { Tmux } from './tmux.js';
 import { ChatHub } from './transcript.js';
+import { selftest } from './selftest.js';
 import { DiffWatcher } from './watcher.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -363,6 +364,7 @@ const HELP = `Ватра (vatra) ${version} — паралельні агент�
   start [--open]       запустити сервер (UI на ${'http://localhost:4317'}); --open відкриє браузер
   open                 відкрити UI в браузері
   doctor               перевірити git, tmux, claude, gh і нативні модулі
+  selftest [--keep]    прогнати справжнього claude через запущену Ватру (довіра, хуки, дозволи, чат)
   update               git pull + install + build (і перезапуск сервісу)
   install-service      автозапуск у фоні (launchd / systemd --user)
   uninstall-service    прибрати автозапуск
@@ -386,6 +388,8 @@ switch (cmd) {
   case 'doctor':
     await doctor();
     break;
+  case 'selftest':
+    process.exit(await selftest({ keep: rest.includes('--keep') }));
   case 'update':
     update();
     break;
