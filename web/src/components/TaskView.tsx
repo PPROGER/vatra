@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Project, Task } from '../../../server/shared/types';
-import { CLOSED_STATUSES, OPEN_STATUSES } from '../../../server/shared/types';
+import { CLOSED_STATUSES, OPEN_STATUSES, SETTLED_STATUSES } from '../../../server/shared/types';
 import { api } from '../api';
 import { DiffView } from './DiffView';
 import { Terminal } from './Terminal';
@@ -40,7 +40,7 @@ export function TaskView({
 
   const open = OPEN_STATUSES.includes(task.status) && task.status !== 'creating';
   const live = task.status === 'running' || task.status === 'idle';
-  const canMerge = ['idle', 'review', 'error', 'queued'].includes(task.status);
+  const canMerge = SETTLED_STATUSES.includes(task.status);
 
   const act = async (key: string, fn: () => Promise<unknown>, ok?: string) => {
     setBusy(key);
@@ -134,6 +134,25 @@ export function TaskView({
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-muted font-mono">
             <span title="Гілка агента">{task.branch}</span>
             <span className="text-faint">← {task.baseBranch}{task.baseCommit ? `@${task.baseCommit.slice(0, 7)}` : ''}</span>
+            {open && !!task.baseAhead && (
+              <span className="inline-flex items-center gap-1.5 font-sans">
+                <span className="text-amber-300" title={`У ${task.baseRef} є коміти, яких немає в гілці агента`}>
+                  {task.baseRef} +{task.baseAhead}
+                </span>
+                <button
+                  className="text-[11px] rounded border border-amber-700/60 text-amber-200 px-1.5 hover:bg-amber-950/40 cursor-pointer"
+                  onClick={() =>
+                    act('rebase', async () => {
+                      const r = await api.rebase(task.id);
+                      toast('info', 'Попросив агента зробити rebase', `на ${r.ref}${r.delivered === 'relaunch' ? ' (агента розбуджено)' : ''}`);
+                    })
+                  }
+                  title="Попросити агента зробити rebase на свіжу базову гілку й розвʼязати конфлікти"
+                >
+                  {busy === 'rebase' ? '…' : 'Rebase'}
+                </button>
+              </span>
+            )}
             {task.port && <span className="text-faint">PORT={task.port}</span>}
             <span className="text-faint font-sans">{project?.name} · {timeAgo(task.createdAt)}</span>
           </div>
@@ -325,6 +344,7 @@ function NotRunning({ task, onStart, busy, canStart }: { task: Task; onStart: ()
   const text: Record<string, string> = {
     creating: 'Створюю worktree і готую середовище…',
     queued: 'Чекає вільного слота (ліміт активних агентів).',
+    sleeping: 'Агент спить, бо довго простоював. Напиши в чат або натисни кнопку — він продовжить з того ж місця.',
     review: 'Агент не запущений. Переглянь диф, злий або продовж роботу.',
     error: 'Агент не запущений.',
     merged: `Злито${task.mergedAt ? ` ${timeAgo(task.mergedAt)} тому` : ''}. Worktree і гілку прибрано.`,
@@ -339,7 +359,7 @@ function NotRunning({ task, onStart, busy, canStart }: { task: Task; onStart: ()
         <div className="text-muted text-[13px] mb-3">{text[task.status]}</div>
         {canStart && task.status !== 'queued' && (
           <Button variant="primary" onClick={onStart} busy={busy}>
-            Запустити агента (--resume)
+            {task.status === 'sleeping' ? 'Розбудити агента' : 'Запустити агента (--resume)'}
           </Button>
         )}
       </div>

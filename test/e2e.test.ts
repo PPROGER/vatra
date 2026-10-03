@@ -337,6 +337,45 @@ describe('e2e', () => {
     expect(sh(repo, 'branch', '--list', 'user/keep-me')).toContain('user/keep-me');
   }, 30000);
 
+  it('idle agents go to sleep and wake up on the next message', async () => {
+    const t = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'sleepy', prompt: 'before-sleep' });
+    await waitStatus(t.id, 'idle');
+    await api('PATCH', '/api/settings', { idleSleepMinutes: 0.0001 });
+    try {
+      await sleep(50);
+      await api('POST', '/api/maintenance');
+      const slept = await waitStatus(t.id, 'sleeping');
+      expect(slept.alive).toBe(false);
+      expect(tmuxHas(`vatra-${t.id}`)).toBe(false);
+    } finally {
+      await api('PATCH', '/api/settings', { idleSleepMinutes: 30 });
+    }
+    const r = await api('POST', `/api/tasks/${t.id}/message`, { text: 'wake-up' });
+    expect(r.delivered).toBe('relaunch');
+    await waitFor(async () => readFileSync(join(t.worktreePath, 'agent.txt'), 'utf8').includes('wake-up'), 'woke up and worked');
+    const sessions = (await api('GET', `/api/tasks/${t.id}`)).sessions;
+    expect(sessions.length).toBe(2);
+    await api('POST', `/api/tasks/${t.id}/discard`);
+  }, 30000);
+
+  it('shows how far the base branch moved and asks the agent to rebase', async () => {
+    const t = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'behind', prompt: 'behind-work' });
+    await waitStatus(t.id, 'idle');
+    writeFileSync(join(repo, 'base-moved.txt'), 'x\n');
+    sh(repo, 'add', 'base-moved.txt');
+    sh(repo, 'commit', '-qm', 'base moved');
+    await api('POST', '/api/maintenance');
+    const after = await waitFor(async () => {
+      const x = await taskStatus(t.id);
+      return x.baseAhead === 1 ? x : undefined;
+    }, 'baseAhead = 1');
+    expect(after.baseRef).toBe('main');
+    const r = await api('POST', `/api/tasks/${t.id}/rebase`);
+    expect(r.ref).toBe('main');
+    await waitFor(async () => readFileSync(join(t.worktreePath, 'agent.txt'), 'utf8').includes('git rebase main'), 'agent got the rebase request');
+    await api('POST', `/api/tasks/${t.id}/discard`);
+  }, 30000);
+
   it('PR mode: PR is opened/updated, a merged PR closes the task', async () => {
     const origin = join(home, 'origin.git');
     execFileSync('git', ['init', '-q', '--bare', origin]);

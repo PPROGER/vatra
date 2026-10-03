@@ -20,6 +20,10 @@ export interface AppDeps {
   webDir: string | null;
   dev: boolean;
   info: () => ServerInfo;
+  settings: {
+    patch: (p: { language?: 'auto' | 'uk' | 'en'; idleSleepMinutes?: number; maxActive?: number }) => Promise<ServerInfo>;
+    maintenance: () => Promise<void>;
+  };
   subscribe: (fn: (e: ServerEvent) => void) => () => void;
 }
 
@@ -95,6 +99,19 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 
   app.get('/api/info', async () => d.info());
+  app.patch('/api/settings', async (req) => {
+    const b = (req.body ?? {}) as Body;
+    return d.settings.patch({
+      language: str(b.language) as 'auto' | 'uk' | 'en' | undefined,
+      idleSleepMinutes: typeof b.idleSleepMinutes === 'number' ? b.idleSleepMinutes : undefined,
+      maxActive: typeof b.maxActive === 'number' ? b.maxActive : undefined,
+    });
+  });
+  // run the periodic jobs now: idle sleep, base-branch check, PR status
+  app.post('/api/maintenance', async () => {
+    await d.settings.maintenance();
+    return { ok: true };
+  });
 
   app.get('/api/projects', async () => s.listProjects());
   app.post('/api/projects', async (req) => {
@@ -199,6 +216,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     return s.merge(idParam(req), strategy, { push: b.push === true });
   });
   app.post('/api/tasks/:id/discard', async (req) => s.discard(idParam(req)));
+  app.post('/api/tasks/:id/rebase', async (req) => s.rebase(idParam(req)));
   app.post('/api/tasks/:id/finish', async (req) => s.finish(idParam(req), { force: ((req.body ?? {}) as Body).force === true }));
   app.post('/api/tasks/:id/pr', async (req) => s.pr(idParam(req)));
   app.post('/api/tasks/:id/pr/check', async (req) => s.checkPr(idParam(req)));

@@ -349,7 +349,11 @@ export function Chat({
         <div className="mx-auto w-full max-w-4xl px-5 pb-4">
           {!live && task.status !== 'creating' && (
             <div className="text-[11.5px] text-faint mb-1.5">
-              {task.status === 'queued' ? 'Агент у черзі — повідомлення дочекається запуску.' : 'Агент не запущений — повідомлення перезапустить його з --resume.'}
+              {task.status === 'queued'
+                ? 'Агент у черзі — повідомлення дочекається запуску.'
+                : task.status === 'sleeping'
+                  ? 'Агент спить — повідомлення розбудить його з тієї ж розмови (--resume).'
+                  : 'Агент не запущений — повідомлення перезапустить його з --resume.'}
             </div>
           )}
           <Composer

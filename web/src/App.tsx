@@ -3,6 +3,7 @@ import type { Project, ServerEvent, ServerInfo, Task } from '../../server/shared
 import { api, subscribeEvents, token } from './api';
 import { NewProjectModal, ProjectSettingsModal } from './components/Modals';
 import { NewTask } from './components/NewTask';
+import { SettingsModal } from './components/Settings';
 import { Sidebar } from './components/Sidebar';
 import { TaskView } from './components/TaskView';
 import { Button, Toasts, type Toast } from './components/ui';
@@ -26,7 +27,7 @@ export function App() {
   const [diffTicks, setDiffTicks] = useState<Record<number, number>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [modal, setModal] = useState<
-    { kind: 'project' } | { kind: 'settings'; project: Project } | null
+    { kind: 'project' } | { kind: 'settings'; project: Project } | { kind: 'app' } | null
   >(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const toastId = useRef(0);
@@ -144,6 +145,7 @@ export function App() {
         onNewProject={() => setModal({ kind: 'project' })}
         onNewTask={(p) => newTask(p.id)}
         drafting={task ? null : (draft ?? projects[0]?.id ?? null)}
+        onSettings={() => setModal({ kind: 'app' })}
         onProjectSettings={(p) => setModal({ kind: 'settings', project: p })}
       />
       <main className="flex-1 min-w-0">
@@ -179,6 +181,9 @@ export function App() {
           onError={(m) => toast('error', 'Помилка', m)}
           onDeleted={() => setModal(null)}
         />
+      )}
+      {modal?.kind === 'app' && info && (
+        <SettingsModal info={info} onClose={() => setModal(null)} onSaved={setInfo} onError={(m) => toast('error', 'Помилка', m)} />
       )}
       <Toasts toasts={toasts} dismiss={(id) => setToasts((t) => t.filter((x) => x.id !== id))} />
     </div>

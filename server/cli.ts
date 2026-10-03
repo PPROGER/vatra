@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
-import { ensureDirs, getPaths, loadConfig, loadToken } from './config.js';
+import { ensureDirs, getPaths, loadConfig, loadToken, resolveLanguage, saveConfig, type Config } from './config.js';
 import { openDb } from './db.js';
 import { isSupportedPlatform, loginShellPath, platform, resolveClaudeBin } from './platform.js';
 import { TerminalHub } from './pty.js';
@@ -96,12 +96,32 @@ async function start(dev: boolean, openUi = false) {
     platform,
     dataDir: paths.dataDir,
     maxActive: config.maxActive,
+    idleSleepMinutes: config.idleSleepMinutes,
+    language: resolveLanguage(config.language),
+    languageSetting: config.language,
     claudeBin,
     warnings,
   });
 
   const webDir = join(pkgRoot, 'dist', 'web');
-  const app = await buildApp({ service, hub, token, port: config.port, webDir: dev ? null : webDir, dev, info, subscribe });
+  const settings = {
+    patch: async (p: Partial<Pick<Config, 'language' | 'idleSleepMinutes' | 'maxActive'>>) => {
+      const clean: Partial<Config> = {};
+      if (p.language && ['auto', 'uk', 'en'].includes(p.language)) clean.language = p.language;
+      if (typeof p.idleSleepMinutes === 'number' && p.idleSleepMinutes >= 0 && p.idleSleepMinutes <= 24 * 60) clean.idleSleepMinutes = p.idleSleepMinutes;
+      if (typeof p.maxActive === 'number' && Number.isInteger(p.maxActive) && p.maxActive >= 1 && p.maxActive <= 32) clean.maxActive = p.maxActive;
+      Object.assign(config, clean);
+      saveConfig(paths, clean);
+      await service.dequeue();
+      return info();
+    },
+    maintenance: async () => {
+      await service.sleepIdle();
+      await service.refreshBaseAhead({ fetch: true });
+      await service.pollPrs();
+    },
+  };
+  const app = await buildApp({ service, hub, token, port: config.port, settings, webDir: dev ? null : webDir, dev, info, subscribe });
   try {
     await app.listen({ host: '127.0.0.1', port: config.port });
   } catch (err) {
@@ -124,6 +144,10 @@ async function start(dev: boolean, openUi = false) {
       .catch((err) => console.error('[sweep]', err))
       .finally(() => (sweeping = false));
   }, 3000).unref();
+  // idle agents go to sleep; base branches are re-checked for new commits
+  setInterval(() => void service.sleepIdle().catch((err) => console.error('[sleep]', err)), 60_000).unref();
+  setInterval(() => void service.refreshBaseAhead({ fetch: true }).catch((err) => console.error('[base]', err)), 180_000).unref();
+  setTimeout(() => void service.refreshBaseAhead({ fetch: true }).catch(() => {}), 8000).unref();
   // merged/closed PRs on GitHub close their tasks
   setInterval(() => void service.pollPrs().catch((err) => console.error('[pr]', err)), 120_000).unref();
   setTimeout(() => void service.pollPrs().catch(() => {}), 5000).unref();

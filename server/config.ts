@@ -18,6 +18,10 @@ export interface Config {
   ringBufferBytes: number;
   /** tmux socket name (`tmux -L <name>`), isolates our sessions from yours. */
   tmuxSocket: string;
+  /** UI / message language: 'auto' follows the system locale. */
+  language: 'auto' | 'uk' | 'en';
+  /** Put agents to sleep after this many idle minutes (0 = never). A chat message wakes them. */
+  idleSleepMinutes: number;
   /** Context window size for the usage bar. Max plan sessions: 1M. */
   contextWindow: number | null;
 }
@@ -31,6 +35,8 @@ export const DEFAULT_CONFIG: Config = {
   ringBufferBytes: 200 * 1024,
   tmuxSocket: 'vatra',
   contextWindow: 1_000_000,
+  idleSleepMinutes: 30,
+  language: 'auto',
 };
 
 export interface Paths {
@@ -84,6 +90,33 @@ export function loadConfig(paths: Paths): Config {
   // the window bar used to default to a model guess; Max plan sessions have 1M
   if (cfg.contextWindow === null && fileCfg.contextWindow === null) cfg.contextWindow = DEFAULT_CONFIG.contextWindow;
   return cfg;
+}
+
+export type Lang = 'uk' | 'en';
+
+/** 'auto' → uk for Ukrainian/Russian system locales, en otherwise. */
+export function resolveLanguage(setting: Config['language']): Lang {
+  if (setting === 'uk' || setting === 'en') return setting;
+  const loc = (process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '').toLowerCase();
+  if (loc.startsWith('uk') || loc.startsWith('ru')) return 'uk';
+  try {
+    const intl = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase();
+    if (intl.startsWith('uk') || intl.startsWith('ru')) return 'uk';
+  } catch {
+    /* ignore */
+  }
+  return 'en';
+}
+
+/** Writes changed settings back to config.json, keeping keys the user added by hand. */
+export function saveConfig(paths: Paths, patch: Partial<Config>): void {
+  let current: Record<string, unknown> = {};
+  try {
+    current = JSON.parse(readFileSync(paths.configFile, 'utf8'));
+  } catch {
+    current = { ...DEFAULT_CONFIG };
+  }
+  writeFileSync(paths.configFile, JSON.stringify({ ...current, ...patch }, null, 2) + '\n');
 }
 
 /** Random token required by every API call and WebSocket. Stable across restarts. */

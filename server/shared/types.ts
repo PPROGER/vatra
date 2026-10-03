@@ -6,6 +6,8 @@ export const TASK_STATUSES = [
   'running',
   'idle',
   'review',
+  /** Agent was put to sleep after being idle too long; a chat message wakes it up with --resume. */
+  'sleeping',
   'merged',
   'discarded',
   /** Finished by hand (e.g. you pushed from the chat): agent stopped, worktree removed, chat archived. */
@@ -15,7 +17,10 @@ export const TASK_STATUSES = [
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 /** Statuses in which the task still owns a worktree and a branch. */
-export const OPEN_STATUSES: readonly TaskStatus[] = ['creating', 'queued', 'running', 'idle', 'review', 'error'];
+export const OPEN_STATUSES: readonly TaskStatus[] = ['creating', 'queued', 'running', 'idle', 'review', 'sleeping', 'error'];
+
+/** Statuses in which the agent's work can be merged / PR'd / finished. */
+export const SETTLED_STATUSES: readonly TaskStatus[] = ['idle', 'review', 'sleeping', 'error', 'queued'];
 
 /** Closed tasks: kept for their chat history (the archive). */
 export const CLOSED_STATUSES: readonly TaskStatus[] = ['merged', 'discarded', 'done'];
@@ -52,6 +57,10 @@ export interface Task {
   prState: string | null;
   /** True while a tmux session for this task exists. Computed, not stored. */
   alive?: boolean;
+  /** Commits the base branch (origin/<base> when there is a remote) has that the agent branch lacks. */
+  baseAhead?: number | null;
+  /** The ref baseAhead was measured against, e.g. origin/staging. */
+  baseRef?: string | null;
   /** Short line from the last Notification hook ("Claude needs your permission…"). */
   lastMessage?: string | null;
 }
@@ -96,6 +105,11 @@ export interface ServerInfo {
   platform: string;
   dataDir: string;
   maxActive: number;
+  idleSleepMinutes: number;
+  /** Effective UI language. */
+  language: 'uk' | 'en';
+  /** The setting: auto / uk / en. */
+  languageSetting: 'auto' | 'uk' | 'en';
   claudeBin: string | null;
   warnings: string[];
 }

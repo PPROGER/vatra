@@ -14,7 +14,7 @@ import type { TerminalHub } from './pty.js';
 import type { ChatState, DiffMode, DiffResult, Project, ServerEvent, Session, SlashCommand, Task, TaskStatus } from './shared/types.js';
 import { describeTool, type ChatHub } from './transcript.js';
 import { listSlashCommands } from './commands.js';
-import { CLOSED_STATUSES, OPEN_STATUSES } from './shared/types.js';
+import { CLOSED_STATUSES, OPEN_STATUSES, SETTLED_STATUSES } from './shared/types.js';
 import { slugify, uniqueSlug } from './slug.js';
 import { shQuote, Tmux } from './tmux.js';
 import type { DiffWatcher } from './watcher.js';
@@ -170,7 +170,8 @@ export class TaskService {
   }
 
   private dto(r: TaskRow): Task {
-    return toTask(r, { alive: this.d.hub.has(r.id) });
+    const base = this.baseAhead.get(r.id);
+    return toTask(r, { alive: this.d.hub.has(r.id), baseAhead: base?.count ?? null, baseRef: base?.ref ?? null });
   }
 
   getTask(id: number): Task {
@@ -192,6 +193,10 @@ export class TaskService {
   }
 
   private update(id: number, values: Partial<typeof tasks.$inferInsert>): Task {
+    if (values.status) {
+      if (values.status !== 'idle') this.idleSince.delete(id);
+      else if (!this.idleSince.has(id)) this.idleSince.set(id, Date.now());
+    }
     this.d.db.update(tasks).set(values).where(eq(tasks.id, id)).run();
     const t = this.getTask(id);
     this.d.emit({ type: 'task', task: t });
@@ -339,6 +344,8 @@ export class TaskService {
   }
 
   private pendingMessages = new Map<number, string>();
+  private idleSince = new Map<number, number>();
+  private baseAhead = new Map<number, { count: number; ref: string }>();
   private startsWithPrompt = new Set<number>();
   private lastTool = new Map<number, string>();
 
@@ -720,6 +727,7 @@ export class TaskService {
         break;
       case 'Stop': {
         this.update(taskId, { status: 'idle', lastMessage: null });
+        void this.refreshBaseAhead({ taskId }).catch(() => {});
         void this.syncBranch(taskId).catch(() => {});
         chat.setMeta(taskId, { permission: null, activity: null });
         chat.poke(taskId);
@@ -770,7 +778,7 @@ export class TaskService {
   ): Promise<{ task: Task; conflict?: string[]; message: string; pushed?: boolean }> {
     const t = await this.syncBranch(taskId);
     const project = this.getProject(t.projectId);
-    if (!['idle', 'review', 'error', 'queued'].includes(t.status)) {
+    if (!SETTLED_STATUSES.includes(t.status)) {
       throw new UserError(t.status === 'running' ? 'Агент зараз працює — дочекайся паузи або зупини його' : `Неможливо злити задачу в стані ${t.status}`, 409);
     }
     if (!existsSync(t.worktreePath)) throw new UserError('Worktree не існує', 410);
@@ -1153,6 +1161,77 @@ export class TaskService {
       this.log(`[sweep] task ${t.id}: agent exited (${now.exists ? `code ${now.exitCode}` : 'session gone'})`);
       await this.finalizeSession(t.id, now.exitCode);
     }
+  }
+
+  /**
+   * Puts agents that have been waiting for you longer than `idleSleepMinutes` to sleep:
+   * the claude process is closed (memory freed), the task stays open, and the next chat
+   * message brings it back with --resume.
+   */
+  async sleepIdle(): Promise<void> {
+    const minutes = this.d.config.idleSleepMinutes;
+    if (!minutes || minutes <= 0) return;
+    const idle = this.d.db.select().from(tasks).where(eq(tasks.status, 'idle')).all();
+    for (const t of idle) {
+      const since = this.idleSince.get(t.id);
+      if (since === undefined) {
+        this.idleSince.set(t.id, Date.now()); // e.g. right after a server restart
+        continue;
+      }
+      if (Date.now() - since < minutes * 60_000) continue;
+      if (this.launching.has(t.id) || this.d.chat.hasPermission(t.id)) continue;
+      this.log(`[task ${t.id}] idle for ${minutes} min — putting the agent to sleep`);
+      await this.stopAgent(t.id, { keepStatus: true });
+      const fresh = this.row(t.id);
+      if (fresh.status === 'idle') {
+        this.setStatus(t.id, 'sleeping', `Агент заснув після ${minutes} хв простою — напиши в чат, щоб розбудити`);
+      }
+      await this.dequeue();
+    }
+  }
+
+  /** How far the base branch moved ahead of each open task's branch. */
+  async refreshBaseAhead(opts: { fetch?: boolean; taskId?: number } = {}): Promise<void> {
+    const open = this.d.db
+      .select()
+      .from(tasks)
+      .where(inArray(tasks.status, [...OPEN_STATUSES]))
+      .all()
+      .filter((t) => (opts.taskId ? t.id === opts.taskId : true) && t.baseCommit && existsSync(t.worktreePath));
+    const fetched = new Set<number>();
+    for (const t of open) {
+      const project = this.getProject(t.projectId);
+      const repo = project.repoPath;
+      const remote = await git.hasRemote(repo).catch(() => false);
+      if (opts.fetch && remote && !fetched.has(project.id)) {
+        fetched.add(project.id);
+        await git.run(repo, ['fetch', '--quiet', 'origin'], { okCodes: [0, 1, 128], timeout: 60_000 }).catch(() => null);
+      }
+      const remoteRef = `origin/${t.baseBranch}`;
+      const ref = remote && (await git.refExists(repo, `refs/remotes/${remoteRef}`)) ? remoteRef : t.baseBranch;
+      const r = await git.run(repo, ['rev-list', '--count', `${t.branch}..${ref}`], { okCodes: [0, 128] }).catch(() => null);
+      if (!r || r.code !== 0) continue;
+      const count = Number(r.stdout.trim()) || 0;
+      const prev = this.baseAhead.get(t.id);
+      if (prev?.count === count && prev.ref === ref) continue;
+      this.baseAhead.set(t.id, { count, ref });
+      this.d.emit({ type: 'task', task: this.dto(this.row(t.id)) });
+    }
+  }
+
+  /** Asks the agent to rebase onto the moved base branch (it resolves conflicts itself). */
+  async rebase(taskId: number): Promise<{ delivered: 'typed' | 'relaunch'; ref: string }> {
+    await this.refreshBaseAhead({ fetch: true, taskId });
+    const t = this.row(taskId);
+    const info = this.baseAhead.get(taskId);
+    const ref = info?.ref ?? t.baseBranch;
+    const fetchCmd = ref.startsWith('origin/') ? 'git fetch origin && ' : '';
+    const text =
+      `Базова гілка ${ref} пішла вперед${info?.count ? ` на ${info.count} коміт(ів)` : ''}. ` +
+      `Зроби rebase своєї гілки на неї (${fetchCmd}git rebase ${ref}), розвʼяжи конфлікти, якщо будуть, ` +
+      `перевір, що все збирається і тести проходять, і коротко напиши, що змінилось.`;
+    const r = await this.sendMessage(taskId, text);
+    return { ...r, ref };
   }
 
   /** Called by the watcher. */

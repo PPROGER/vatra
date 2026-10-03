@@ -133,7 +133,7 @@ export function toProject(r: ProjectRow): Project {
   return { ...r, envFiles };
 }
 
-export function toTask(r: TaskRow, extra: { alive?: boolean } = {}): Task {
+export function toTask(r: TaskRow, extra: { alive?: boolean; baseAhead?: number | null; baseRef?: string | null } = {}): Task {
   const { hookToken: _omit, ...rest } = r;
   return { ...rest, ...extra };
 }

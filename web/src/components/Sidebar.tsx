@@ -14,6 +14,7 @@ export function Sidebar({
   onNewTask,
   onProjectSettings,
   drafting,
+  onSettings,
 }: {
   projects: Project[];
   tasks: Task[];
@@ -26,6 +27,7 @@ export function Sidebar({
   onProjectSettings: (p: Project) => void;
   /** Project whose "new task" chat is open, if any. */
   drafting: number | null;
+  onSettings: () => void;
 }) {
   const [showClosed, setShowClosed] = useState(false);
   const live = tasks.filter((t) => t.status === 'running' || t.status === 'idle').length;
@@ -157,6 +159,9 @@ export function Sidebar({
             🔔 Увімкнути сповіщення браузера
           </button>
         )}
+        <button onClick={onSettings} className="w-full text-left text-[11px] text-muted hover:text-fg cursor-pointer">
+          ⚙ Налаштування
+        </button>
         <button
           onClick={onNewProject}
           className="w-full h-8 rounded-md border border-dashed border-line-2 text-[12px] text-muted hover:text-fg hover:border-[#3a4150] cursor-pointer"

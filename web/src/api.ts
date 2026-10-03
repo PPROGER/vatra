@@ -112,6 +112,8 @@ export const api = {
   merge: (id: number, strategy: 'merge' | 'squash', push = false) =>
     req<{ task: Task; conflict?: string[]; message: string; pushed?: boolean }>('POST', `/api/tasks/${id}/merge`, { strategy, push }),
   discard: (id: number) => req<Task>('POST', `/api/tasks/${id}/discard`),
+  rebase: (id: number) => req<{ delivered: 'typed' | 'relaunch'; ref: string }>('POST', `/api/tasks/${id}/rebase`),
+  settings: (b: { language?: 'auto' | 'uk' | 'en'; idleSleepMinutes?: number; maxActive?: number }) => req<ServerInfo>('PATCH', '/api/settings', b),
   finish: (id: number, force = false) => req<{ task: Task; message: string }>('POST', `/api/tasks/${id}/finish`, { force }),
   pr: (id: number) => req<{ url: string | null; created: boolean; manual?: boolean; output: string; task: Task }>('POST', `/api/tasks/${id}/pr`),
   prCheck: (id: number) => req<Task>('POST', `/api/tasks/${id}/pr/check`),

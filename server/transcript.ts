@@ -304,6 +304,10 @@ export class ChatHub {
     this.emit({ type: 'chat_meta', taskId, permission: m.permission, activity: m.activity });
   }
 
+  hasPermission(taskId: number): boolean {
+    return !!this.meta.get(taskId)?.permission;
+  }
+
   /** Re-reads now (used right after a hook told us something changed). */
   poke(taskId: number) {
     this.tails.get(taskId)?.read(false);

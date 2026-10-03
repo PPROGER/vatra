@@ -41,6 +41,7 @@ export const STATUS_META: Record<TaskStatus, { label: string; dot: string; text:
   running: { label: 'працює', dot: 'bg-emerald-400', text: 'text-emerald-300', pulse: true },
   idle: { label: 'чекає', dot: 'bg-amber-400', text: 'text-amber-300' },
   review: { label: 'ревʼю', dot: 'bg-violet-400', text: 'text-violet-300' },
+  sleeping: { label: 'спить', dot: 'bg-indigo-400/70', text: 'text-indigo-300' },
   merged: { label: 'злито', dot: 'bg-emerald-700', text: 'text-emerald-500' },
   discarded: { label: 'відкинуто', dot: 'bg-zinc-600', text: 'text-zinc-500' },
   done: { label: 'завершено', dot: 'bg-sky-700', text: 'text-sky-400' },
