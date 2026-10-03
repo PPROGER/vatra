@@ -97,37 +97,77 @@ export const inputCls =
   'w-full rounded-md bg-bg border border-line-2 px-2.5 py-1.5 text-[13px] text-fg placeholder:text-faint outline-none focus:border-accent/70 focus:ring-2 focus:ring-accent/15';
 
 /** Small dropdown menu anchored to a button. */
-export function Menu({ label, items, variant = 'default', disabled }: { label: ReactNode; items: { label: string; hint?: string; onClick: () => void; danger?: boolean }[]; variant?: BtnVariant; disabled?: boolean }) {
+export interface MenuItem {
+  label: string;
+  hint?: string;
+  onClick: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+  /** Starts a new group with this heading. */
+  section?: string;
+}
+
+export function Menu({
+  label,
+  items,
+  variant = 'default',
+  disabled,
+  chevron = true,
+  title,
+}: {
+  label: ReactNode;
+  items: MenuItem[];
+  variant?: BtnVariant;
+  disabled?: boolean;
+  chevron?: boolean;
+  title?: string;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const off = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('mousedown', off);
-    return () => window.removeEventListener('mousedown', off);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('mousedown', off);
+      window.removeEventListener('keydown', esc);
+    };
   }, [open]);
   return (
     <div className="relative" ref={ref}>
-      <Button variant={variant} onClick={() => setOpen((o) => !o)} disabled={disabled}>
+      <Button variant={variant} onClick={() => setOpen((o) => !o)} disabled={disabled} title={title}>
         {label}
-        <svg width="10" height="10" viewBox="0 0 10 10" className="opacity-70">
-          <path d="M2 4l3 3 3-3" stroke="currentColor" fill="none" strokeWidth="1.5" />
-        </svg>
+        {chevron && (
+          <svg width="10" height="10" viewBox="0 0 10 10" className="opacity-70">
+            <path d="M2 4l3 3 3-3" stroke="currentColor" fill="none" strokeWidth="1.5" />
+          </svg>
+        )}
       </Button>
       {open && (
-        <div className="absolute right-0 top-8 z-40 min-w-52 rounded-lg border border-line-2 bg-panel-2 p-1 shadow-xl">
-          {items.map((it) => (
-            <button
-              key={it.label}
-              className={cx('w-full text-left rounded-md px-2.5 py-1.5 hover:bg-[#232933] cursor-pointer', it.danger ? 'text-red-400' : 'text-fg')}
-              onClick={() => {
-                setOpen(false);
-                it.onClick();
-              }}
-            >
-              <div className="text-[12px]">{it.label}</div>
-              {it.hint && <div className="text-[11px] text-faint">{it.hint}</div>}
-            </button>
+        <div className="absolute right-0 top-8 z-40 min-w-60 max-h-[70vh] overflow-y-auto rounded-lg border border-line-2 bg-panel-2 p-1 shadow-xl">
+          {items.map((it, i) => (
+            <div key={it.label}>
+              {it.section && (
+                <div className={cx('px-2.5 pb-1 text-[10.5px] uppercase tracking-wider text-faint', i > 0 ? 'pt-2 mt-1 border-t border-line' : 'pt-1')}>{it.section}</div>
+              )}
+              <button
+                disabled={it.disabled}
+                className={cx(
+                  'w-full text-left rounded-md px-2.5 py-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed',
+                  !it.disabled && 'hover:bg-[#232933]',
+                  it.danger ? 'text-red-400' : 'text-fg',
+                )}
+                onClick={() => {
+                  setOpen(false);
+                  it.onClick();
+                }}
+              >
+                <div className="text-[12px]">{it.label}</div>
+                {it.hint && <div className="text-[11px] text-faint">{it.hint}</div>}
+              </button>
+            </div>
           ))}
         </div>
       )}

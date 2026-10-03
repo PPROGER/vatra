@@ -5,7 +5,7 @@ import { api } from '../api';
 import { DiffView } from './DiffView';
 import { Terminal } from './Terminal';
 import { Chat } from './Chat';
-import { Button, cx, Menu, StatusBadge, timeAgo } from './ui';
+import { Button, cx, Menu, Modal, StatusBadge, timeAgo } from './ui';
 
 type Tab = 'chat' | 'terminal' | 'diff' | 'split';
 
@@ -28,6 +28,7 @@ export function TaskView({
     }
   });
   const [busy, setBusy] = useState<string | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -138,26 +139,6 @@ export function TaskView({
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
-          {open && (
-            <Menu
-              label="Відкрити"
-              items={[
-                { label: 'Zed', onClick: () => act('open', () => api.open(task.id, 'zed')) },
-                { label: 'Файли', hint: 'Finder / файловий менеджер', onClick: () => act('open', () => api.open(task.id, 'files')) },
-                { label: 'Термінал', onClick: () => act('open', () => api.open(task.id, 'terminal')) },
-              ]}
-            />
-          )}
-          {live && (
-            <Button busy={busy === 'stop'} onClick={() => act('stop', () => api.stop(task.id))} title="Зупинити claude (SIGTERM, через 5 с SIGKILL)">
-              Зупинити
-            </Button>
-          )}
-          {open && (
-            <Button busy={busy === 'restart'} onClick={() => act('restart', () => api.restart(task.id))} title="Нова сесія з claude --resume">
-              {live ? 'Перезапустити' : 'Запустити'}
-            </Button>
-          )}
           {task.prUrl && (
             <a
               href={task.prUrl}
@@ -172,34 +153,19 @@ export function TaskView({
               PR #{prNumber ?? '?'} ↗
             </a>
           )}
-          {open && prOpen && (
-            <Button busy={busy === 'prcheck'} onClick={prCheck} title="Перевірити, чи PR уже злили (Ватра й так перевіряє кожні 2 хв)">
-              ↻
-            </Button>
-          )}
           {open && prMode && (
             <Button
               variant="primary"
               busy={busy === 'pr'}
               disabled={!canMerge}
               onClick={pr}
-              title={prOpen ? 'Закомітити й запушити нові зміни агента в цей PR' : `git push + gh pr create → ${task.baseBranch}`}
+              title={prOpen ? 'Закомітити й запушити нові зміни агента в цей PR' : `git push + PR → ${task.baseBranch}`}
             >
               {prOpen ? 'Оновити PR' : 'Створити PR'}
             </Button>
           )}
           {open && !prMode && (
-            <Button busy={busy === 'pr'} disabled={!canMerge} onClick={pr} title="git push + gh pr create">
-              {prOpen ? 'Оновити PR' : 'PR'}
-            </Button>
-          )}
-          {open && (
-            <Menu
-              label={busy === 'merge' ? 'Зливаю…' : 'Злити'}
-              variant={prMode ? 'default' : 'primary'}
-              disabled={!canMerge || busy === 'merge'}
-              items={mergeItems}
-            />
+            <Menu label={busy === 'merge' ? 'Зливаю…' : 'Злити'} variant="primary" disabled={!canMerge || busy === 'merge'} items={mergeItems} />
           )}
           {open && (
             <Button busy={busy === 'finish'} onClick={finish} title="Ти вже все зробив сам (напр. агент запушив із чату): зупинити агента, прибрати worktree, чат — в архів">
@@ -207,9 +173,52 @@ export function TaskView({
             </Button>
           )}
           {(open || task.status === 'creating') && (
-            <Button variant="danger" busy={busy === 'discard'} onClick={discard}>
-              Відкинути
-            </Button>
+            <Menu
+              label={busy && !['pr', 'merge', 'finish'].includes(busy) ? '…' : '⋯'}
+              chevron={false}
+              title="Інші дії"
+              items={[
+                ...(live
+                  ? [
+                      { section: 'Агент', label: 'Перезапустити', hint: 'нова сесія з claude --resume', onClick: () => act('restart', () => api.restart(task.id)) },
+                      { label: 'Зупинити', hint: 'закрити claude, задача лишається', onClick: () => act('stop', () => api.stop(task.id)) },
+                    ]
+                  : open
+                    ? [{ section: 'Агент', label: 'Запустити', hint: 'claude --resume', onClick: () => act('restart', () => api.restart(task.id)) }]
+                    : []),
+                ...(open
+                  ? [
+                      prMode
+                        ? { section: 'Git', label: 'Злити…', hint: 'merge / squash, з push або без', onClick: () => setMergeOpen(true), disabled: !canMerge }
+                        : { section: 'Git', label: prOpen ? 'Оновити PR' : 'Створити PR', hint: `push + PR → ${task.baseBranch}`, onClick: () => void pr(), disabled: !canMerge },
+                      ...(prOpen ? [{ label: 'Перевірити PR', hint: 'чи вже злили (й так раз на 2 хв)', onClick: () => void prCheck() }] : []),
+                      { section: 'Відкрити', label: 'Zed', onClick: () => act('open', () => api.open(task.id, 'zed')) },
+                      { label: 'Файли', hint: 'Finder / файловий менеджер', onClick: () => act('open', () => api.open(task.id, 'files')) },
+                      { label: 'Термінал', onClick: () => act('open', () => api.open(task.id, 'terminal')) },
+                    ]
+                  : []),
+                { section: open ? ' ' : undefined, label: 'Відкинути', hint: 'видалити worktree і гілку', danger: true, onClick: discard },
+              ]}
+            />
+          )}
+          {mergeOpen && (
+            <Modal title={`Злити ${task.branch} → ${task.baseBranch}`} onClose={() => setMergeOpen(false)} width="max-w-md">
+              <div className="grid gap-1.5">
+                {mergeItems.map((m) => (
+                  <button
+                    key={m.label}
+                    className="text-left rounded-lg border border-line-2 px-3 py-2 hover:border-accent/60 cursor-pointer"
+                    onClick={() => {
+                      setMergeOpen(false);
+                      m.onClick();
+                    }}
+                  >
+                    <div className="text-[12.5px]">{m.label}</div>
+                    <div className="text-[11px] text-faint">{m.hint}</div>
+                  </button>
+                ))}
+              </div>
+            </Modal>
           )}
         </div>
       </div>
