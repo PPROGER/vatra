@@ -15,6 +15,7 @@ export function Sidebar({
   onProjectSettings,
   drafting,
   onSettings,
+  onPalette,
 }: {
   projects: Project[];
   tasks: Task[];
@@ -28,6 +29,7 @@ export function Sidebar({
   /** Project whose "new task" chat is open, if any. */
   drafting: number | null;
   onSettings: () => void;
+  onPalette: () => void;
 }) {
   const [showClosed, setShowClosed] = useState(false);
   const live = tasks.filter((t) => t.status === 'running' || t.status === 'idle').length;
@@ -65,6 +67,14 @@ export function Sidebar({
             )}
           >
             <span className="text-accent text-[15px] leading-none">+</span> Нова задача
+          </button>
+          <button
+            onClick={onPalette}
+            className="mt-1.5 w-full h-7 rounded-md text-[12px] text-faint hover:text-muted hover:bg-panel-2 cursor-pointer flex items-center justify-between px-2.5"
+            title="Пошук по задачах і архіву"
+          >
+            <span>⌕ Пошук</span>
+            <span className="font-mono text-[10.5px] border border-line-2 rounded px-1">{navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl K'}</span>
           </button>
         </div>
       )}

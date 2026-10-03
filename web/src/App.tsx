@@ -4,6 +4,8 @@ import { api, subscribeEvents, token } from './api';
 import { NewProjectModal, ProjectSettingsModal } from './components/Modals';
 import { NewTask } from './components/NewTask';
 import { SettingsModal } from './components/Settings';
+import { Palette } from './components/Palette';
+import { CLOSED_STATUSES } from '../../server/shared/types';
 import { Sidebar } from './components/Sidebar';
 import { TaskView } from './components/TaskView';
 import { Button, Toasts, type Toast } from './components/ui';
@@ -114,6 +116,29 @@ export function App() {
     });
   }, [loadAll, select]);
 
+  const [palette, setPalette] = useState(false);
+
+  // ⌘K / Ctrl+K — palette; Alt+↑/↓ — previous/next open task (sidebar order)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPalette((v) => !v);
+        return;
+      }
+      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const order = projects.flatMap((p) => tasks.filter((t) => t.projectId === p.id && !CLOSED_STATUSES.includes(t.status)));
+        if (!order.length) return;
+        e.preventDefault();
+        const i = order.findIndex((t) => t.id === selected);
+        const next = e.key === 'ArrowDown' ? (i + 1) % order.length : (i - 1 + order.length) % order.length;
+        select(order[i === -1 ? 0 : next].id);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [projects, tasks, selected, select]);
+
   // title shows how many agents are waiting
   useEffect(() => {
     const waiting = tasks.filter((t) => t.status === 'idle').length;
@@ -146,6 +171,7 @@ export function App() {
         onNewTask={(p) => newTask(p.id)}
         drafting={task ? null : (draft ?? projects[0]?.id ?? null)}
         onSettings={() => setModal({ kind: 'app' })}
+        onPalette={() => setPalette(true)}
         onProjectSettings={(p) => setModal({ kind: 'settings', project: p })}
       />
       <main className="flex-1 min-w-0">
@@ -182,6 +208,7 @@ export function App() {
           onDeleted={() => setModal(null)}
         />
       )}
+      {palette && <Palette projects={projects} tasks={tasks} onClose={() => setPalette(false)} onTask={select} onNew={newTask} />}
       {modal?.kind === 'app' && info && (
         <SettingsModal info={info} onClose={() => setModal(null)} onSaved={setInfo} onError={(m) => toast('error', 'Помилка', m)} />
       )}

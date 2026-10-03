@@ -297,7 +297,7 @@ export function TaskView({
           {CLOSED_STATUSES.includes(task.status) ? (
             <div className="h-full grid place-items-center text-muted">Worktree прибрано — дифу більше немає.</div>
           ) : (
-            <DiffView taskId={task.id} refreshKey={diffTick} enabled={showDiff && !!task.baseCommit} />
+            <DiffView taskId={task.id} refreshKey={diffTick} enabled={showDiff && !!task.baseCommit} toast={toast} />
           )}
         </div>
       </div>
