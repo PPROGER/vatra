@@ -101,6 +101,7 @@ async function start(dev: boolean, openUi = false) {
     idleSleepMinutes: config.idleSleepMinutes,
     language: resolveLanguage(config.language),
     languageSetting: config.language,
+    tmuxSocket: config.tmuxSocket,
     claudeBin,
     warnings,
   });

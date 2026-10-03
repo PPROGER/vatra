@@ -111,6 +111,8 @@ export interface ServerInfo {
   /** The setting: auto / uk / en. */
   languageSetting: 'auto' | 'uk' | 'en';
   claudeBin: string | null;
+  /** Private tmux socket the agents run on (tmux -L <socket>). */
+  tmuxSocket: string;
   warnings: string[];
 }
 

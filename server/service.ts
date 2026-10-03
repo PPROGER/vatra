@@ -671,9 +671,25 @@ export class TaskService {
 
     // ------------------------------------------------------------- hooks
 
+  private hookStats = new Map<number, { count: number; last: string | null; at: string | null; rejected: number }>();
+
+  /** Diagnostics: how many hook calls arrived for a task (used by `vatra selftest`). */
+  hookInfo(taskId: number) {
+    return this.hookStats.get(taskId) ?? { count: 0, last: null, at: null, rejected: 0 };
+  }
+
   async onHook(taskId: number, token: string, event: string, payload: Record<string, unknown>): Promise<void> {
     const t = this.d.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-    if (!t || t.hookToken !== token) throw new UserError(tr('Невірний hook token'), 403);
+    const stats = this.hookInfo(taskId);
+    this.hookStats.set(taskId, stats);
+    if (!t || t.hookToken !== token) {
+      stats.rejected++;
+      this.log(`[task ${taskId}] rejected hook ${event}: bad token`);
+      throw new UserError(tr('Невірний hook token'), 403);
+    }
+    stats.count++;
+    stats.last = event;
+    stats.at = now();
 
     const sid = typeof payload.session_id === 'string' ? payload.session_id : null;
     const transcript = typeof payload.transcript_path === 'string' ? payload.transcript_path : null;

@@ -33,6 +33,8 @@ def assistant(content):
             "usage": {"input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_input_tokens": USED[0], "output_tokens": 200}}})
 
 def hook(event, extra=None):
+    if os.environ.get('FAKE_NO_HOOKS'):
+        return
     try:
         settings = json.load(open(".claude/settings.local.json"))
     except Exception:

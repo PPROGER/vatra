@@ -165,7 +165,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.patch('/api/tasks/:id', async (req) => s.renameTask(idParam(req), str(((req.body ?? {}) as Body).title) ?? ''));
 
   app.get('/api/tasks', async () => s.listTasks());
-  app.get('/api/tasks/:id', async (req) => ({ task: s.getTask(idParam(req)), sessions: s.sessionsOf(idParam(req)) }));
+  app.get('/api/tasks/:id', async (req) => ({ task: s.getTask(idParam(req)), sessions: s.sessionsOf(idParam(req)), hooks: s.hookInfo(idParam(req)) }));
   app.get('/api/tasks/:id/diff', async (req) => {
     const mode = ((req.query as Body).mode as DiffMode) ?? 'all';
     if (!['all', 'committed', 'working'].includes(mode)) throw new UserError('mode: all|committed|working');

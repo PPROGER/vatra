@@ -2,8 +2,8 @@
 // the parts that can't be tested with a fake CLI — folder trust, hooks, transcript,
 // permission prompts, multi-line messages, slash commands.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getPaths, loadConfig } from './config.js';
 import { tr } from './shared/i18n/index.js';
@@ -53,8 +53,9 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
   };
 
   console.log(tr('Vatra selftest — справжній claude, кілька запитів до твоєї підписки.') + '\n');
+  let info: { version: string; claudeBin: string | null; tmuxSocket?: string } = { version: '', claudeBin: null };
   try {
-    const info = await api('GET', '/api/info');
+    info = await api('GET', '/api/info');
     report('ok', tr('сервер {version} на {url}, claude: {claude}', { version: info.version, url: base, claude: info.claudeBin ?? '—' }));
     if (!info.claudeBin) {
       report('fail', tr('claude не знайдено — встанови Claude Code і зроби /login'));
@@ -64,6 +65,78 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
     report('fail', tr('сервер не відповідає ({error}). Запусти: vatra start', { error: (err as Error).message }));
     return 1;
   }
+
+  /** Collects everything needed to tell why hooks don't reach the server (printed in English for bug reports). */
+  const diagnose = async (taskId: number, wt: string) => {
+    const line = (k: string, v: string) => console.log(`      · ${k}: ${v}`);
+    console.log('    diagnostics:');
+    try {
+      line('claude', execFileSync(info.claudeBin ?? 'claude', ['--version'], { encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').at(-1)!);
+    } catch (e) {
+      line('claude', `error ${(e as Error).message.split('\n')[0]}`);
+    }
+    const settingsFile = join(wt, '.claude', 'settings.local.json');
+    let stopCmd: string | null = null;
+    if (!existsSync(settingsFile)) line('hooks file', `MISSING ${settingsFile}`);
+    else {
+      try {
+        const st = JSON.parse(readFileSync(settingsFile, 'utf8'));
+        line('hooks file', `${settingsFile} — events: ${Object.keys(st.hooks ?? {}).join(', ') || 'none'}`);
+        stopCmd = st.hooks?.Stop?.at(-1)?.hooks?.[0]?.command ?? null;
+        const other = Object.keys(st).filter((k) => k !== 'hooks');
+        if (other.length) line('other keys in settings.local.json', other.join(', '));
+      } catch (e) {
+        line('hooks file', `INVALID JSON: ${(e as Error).message}`);
+      }
+    }
+    for (const f of [join(homedir(), '.claude', 'settings.json'), join(homedir(), '.claude', 'settings.local.json'), join(wt, '.claude', 'settings.json')]) {
+      if (!existsSync(f)) continue;
+      try {
+        const st = JSON.parse(readFileSync(f, 'utf8'));
+        const flags = ['disableAllHooks', 'allowManagedHooksOnly'].filter((k) => k in st).map((k) => `${k}=${JSON.stringify(st[k])}`);
+        line(f, `hook events: ${Object.keys(st.hooks ?? {}).join(', ') || 'none'}${flags.length ? '; ' + flags.join(', ') : ''}; permissions.defaultMode=${st.permissions?.defaultMode ?? '-'}`);
+      } catch {
+        line(f, 'unreadable');
+      }
+    }
+    const before = (await api('GET', `/api/tasks/${taskId}`)).hooks;
+    line('hook calls received by the server', `${before?.count ?? '?'} (rejected: ${before?.rejected ?? '?'}, last: ${before?.last ?? '-'})`);
+    if (stopCmd) {
+      // same command claude would run, but for a no-op event so the task state doesn't change
+      const cmd = stopCmd.replace('event=Stop', 'event=SessionEnd').replace(/ >\/dev\/null 2>&1 \|\| true/, ' -w " HTTP %{http_code}" 2>&1');
+      try {
+        const out = execFileSync('/bin/sh', ['-c', cmd], { input: '{}', encoding: 'utf8', timeout: 10_000 });
+        line('manual hook call', out.trim() || '(no output)');
+      } catch (e) {
+        line('manual hook call', `failed: ${(e as Error).message.split('\n')[0]}`);
+      }
+      await sleep(500);
+      const after = (await api('GET', `/api/tasks/${taskId}`)).hooks;
+      line('server saw the manual call', after?.count > (before?.count ?? 0) ? 'yes' : 'NO');
+    }
+    try {
+      const sock = info.tmuxSocket ?? cfg.tmuxSocket;
+      const cur = execFileSync('tmux', ['-L', sock, 'display-message', '-p', '-t', `=vatra-${taskId}:`, '#{pane_current_command} dead=#{pane_dead}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+      line('tmux pane', cur);
+      const screen = execFileSync('tmux', ['-L', sock, 'capture-pane', '-p', '-t', `=vatra-${taskId}:`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+        .split('\n')
+        .map((l) => l.trimEnd())
+        .filter(Boolean)
+        .slice(-18);
+      console.log('      · claude screen (last lines):');
+      for (const l of screen) console.log(`          ${l.slice(0, 140)}`);
+    } catch (e) {
+      line('tmux', `error ${(e as Error).message.split('\n')[0]}`);
+    }
+    try {
+      const real = realpathSync(wt);
+      const projDir = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', real.replace(/[^A-Za-z0-9]/g, '-'));
+      const files = existsSync(projDir) ? readdirSync(projDir).filter((f) => f.endsWith('.jsonl')) : [];
+      line('claude transcript dir', `${projDir} — ${existsSync(projDir) ? `${files.length} transcript(s)` : 'MISSING'}`);
+    } catch (e) {
+      line('transcript', `error ${(e as Error).message}`);
+    }
+  };
 
   const dir = mkdtempSync(join(tmpdir(), 'vatra-selftest-'));
   const repo = join(dir, 'repo');
@@ -114,7 +187,11 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
     // 2. hooks + transcript
     const session = await waitFor(60_000, async () => (await api('GET', `/api/tasks/${task.id}/chat`)).sessionId);
     if (session) report('ok', tr('хуки Claude Code працюють, транскрипт знайдено'));
-    else report('fail', tr('хуки не прийшли за 60 с (перевір .claude/settings.local.json у worktree)'));
+    else {
+      report('fail', tr('хуки не прийшли за 60 с (перевір .claude/settings.local.json у worktree)'));
+      await diagnose(task.id, wt);
+      throw new Error('stopping here: the remaining checks need hooks');
+    }
 
     // 3. permission prompt for Bash → allow from the chat
     const hello = join(wt, 'hello.txt');
@@ -174,11 +251,13 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
   } catch (err) {
     report('fail', (err as Error).message);
   } finally {
-    if (!opts.keep) {
+    const failed = results.some((r) => r.mark === 'fail');
+    if (failed && !opts.keep) console.log(`\n  (kept for inspection — discard the "selftest" task in Vatra when done; repo: ${repo})`);
+    if (!opts.keep && !failed) {
       if (taskId) await api('POST', `/api/tasks/${taskId}/discard`).catch(() => {});
       if (projectId) await api('DELETE', `/api/projects/${projectId}`).catch(() => {});
       rmSync(dir, { recursive: true, force: true });
-    } else {
+    } else if (opts.keep) {
       console.log(`\n  ${tr('(--keep) задачу й проєкт лишено: {repo}', { repo })}`);
     }
   }
