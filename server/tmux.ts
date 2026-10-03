@@ -187,6 +187,12 @@ export class Tmux {
     }
   }
 
+  /** The visible screen of the pane as plain text. */
+  async capture(name: string): Promise<string> {
+    const r = await this.run(['capture-pane', '-p', '-t', `=${name}:`], [0, 1]);
+    return r.code === 0 ? r.stdout : '';
+  }
+
   async kill(name: string): Promise<void> {
     await this.run(['kill-session', '-t', `=${name}`], [0, 1]);
   }

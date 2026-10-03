@@ -2,18 +2,19 @@
 // and the diff watcher, and is the only place that changes task status.
 import { tr } from './shared/i18n/index.js';
 import { randomBytes } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Config, Paths } from './config.js';
 import { now, projects, sessions, tasks, toProject, toSession, toTask, type DB, type TaskRow } from './db.js';
 import * as git from './git.js';
-import { SETTINGS_REL, writeHooks } from './hooks.js';
+import { SETTINGS_REL, curlPost, hookTrace, hookUrl, writeHooks } from './hooks.js';
 import { envVar, notify, openIn, type OpenTarget } from './platform.js';
 import type { TerminalHub } from './pty.js';
 import type { ChatState, DiffMode, DiffResult, Project, ServerEvent, Session, SlashCommand, Task, TaskStatus } from './shared/types.js';
 import { describeTool, type ChatHub } from './transcript.js';
+import { findTranscript, screenAsksPermission, turnState } from './turnstate.js';
 import { listSlashCommands } from './commands.js';
 import { CLOSED_STATUSES, OPEN_STATUSES, SETTLED_STATUSES } from './shared/types.js';
 import { slugify, uniqueSlug } from './slug.js';
@@ -46,6 +47,8 @@ export interface ServiceDeps {
 }
 
 const LIVE: TaskStatus[] = ['running', 'idle'];
+/** How long to wait for claude's first hook before falling back to reading its transcript. */
+const HOOK_GRACE_MS = 8000;
 
 export class TaskService {
   private locks = new Map<string, Promise<unknown>>();
@@ -379,11 +382,13 @@ export class TaskService {
     }
     if (pane.exists) await this.d.tmux.kill(name);
 
-    writeHooks(t.worktreePath, this.d.config.port, taskId, t.hookToken);
+    const flagSettings = writeHooks(t.worktreePath, this.d.config.port, taskId, t.hookToken, this.d.paths.runDir);
+    const trace = hookTrace(this.d.paths.runDir, taskId);
+    for (const f of [trace.ranFile, trace.logFile, trace.startedFile]) rmSync(f, { force: true });
 
     const previous = this.lastSession(taskId);
     const isFirst = !previous;
-    const args = [...this.d.config.claudeArgs];
+    const args = [...(flagSettings ? ['--settings', flagSettings] : []), ...this.d.config.claudeArgs];
     if (!isFirst) {
       if (previous.claudeSessionId) args.push('--resume', previous.claudeSessionId);
       else args.push('--continue');
@@ -415,6 +420,11 @@ export class TaskService {
         PATH: this.d.pathEnv ?? undefined,
       },
       setupScript: isFirst ? project.setupScript : null,
+      // checks that the hook endpoint is reachable from the agent's environment (see `vatra selftest`)
+      probe: [
+        `touch ${shQuote(trace.startedFile)}`,
+        `${curlPost(hookUrl(this.d.config.port, taskId, t.hookToken, 'Probe'), '{}')} >/dev/null 2>&1 || echo "$(date '+%F %T') probe curl exit $?" >> ${shQuote(trace.logFile)}`,
+      ].join('\n'),
     });
     const scriptPath = join(this.d.paths.runDir, `task-${taskId}.sh`);
     writeFileSync(scriptPath, script, { mode: 0o700 });
@@ -422,7 +432,7 @@ export class TaskService {
     // Status first: the agent's SessionStart hook can arrive before newSession() returns.
     this.update(taskId, { status: 'running', statusReason: null, port, lastMessage: null });
     const pid = await this.d.tmux.newSession({ name, cwd: t.worktreePath, command: ['/bin/sh', scriptPath] });
-    const died = `curl -s -m 3 -X POST ${shQuote(`http://127.0.0.1:${this.d.config.port}/api/hooks/${taskId}?event=PaneDied&token=${t.hookToken}`)} >/dev/null 2>&1 || true`;
+    const died = `${curlPost(hookUrl(this.d.config.port, taskId, t.hookToken, 'PaneDied'), '{}')} >/dev/null 2>&1 || true`;
     await this.d.tmux.onPaneDied(name, died).catch((e) => this.log(`[task ${taskId}] set-hook: ${e.message}`));
     await this.d.tmux.pipeToFile(name, logPath).catch((e) => this.log(`[task ${taskId}] pipe-pane: ${e.message}`));
 
@@ -542,11 +552,16 @@ export class TaskService {
       'ctrl-c': ['C-c'],
     };
     for (let i = 1; i <= 9; i++) map[String(i)] = [String(i)];
-    const seq = map[key];
+    let seq = map[key];
     if (!seq) throw new UserError(tr('Невідома клавіша: {key}', { key }));
     const name = Tmux.sessionName(taskId);
     const p = await this.d.tmux.pane(name);
     if (!p.exists || p.dead) throw new UserError(tr('Агент не запущений'), 409);
+    if (key === 'allow' && this.d.chat.permissionKind(taskId) === 'trust') {
+      // newer claude lists "No, exit" first and "Yes, I trust this folder" second
+      const screen = await this.d.tmux.capture(name).catch(() => '');
+      if (/No,\s*exit[\s\S]*Yes,\s*I\s*trust/i.test(screen)) seq = ['Down', 'Enter'];
+    }
     await this.d.tmux.sendKeys(name, seq);
     if (['allow', 'allow-always', 'deny', 'escape', 'interrupt'].includes(key)) this.d.chat.setMeta(taskId, { permission: null });
   }
@@ -690,6 +705,18 @@ export class TaskService {
     stats.count++;
     stats.last = event;
     stats.at = now();
+    if (event === 'Probe') return; // reachability check from the launcher / selftest
+    if (event !== 'PaneDied') {
+      const last = this.lastSession(taskId);
+      if (last && !last.endedAt) this.hooked.set(taskId, last.id);
+    }
+    await this.applyEvent(taskId, event, payload);
+  }
+
+  /** Applies one Claude Code lifecycle event — from a hook, or inferred when hooks don't work. */
+  private async applyEvent(taskId: number, event: string, payload: Record<string, unknown>): Promise<void> {
+    const t = this.d.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+    if (!t) return;
 
     const sid = typeof payload.session_id === 'string' ? payload.session_id : null;
     const transcript = typeof payload.transcript_path === 'string' ? payload.transcript_path : null;
@@ -765,6 +792,78 @@ export class TaskService {
       }
       default:
         break;
+    }
+  }
+
+  // ------------------------------------------------------------- without hooks
+
+  /** taskId → session row that delivered real hooks (then nothing is inferred for it). */
+  private hooked = new Map<number, number>();
+  /** taskId → session row for which a synthetic SessionStart was applied. */
+  private inferredStart = new Map<number, number>();
+
+  /** Whether the current session of a task gets real hooks (for the UI / selftest). */
+  hooksWork(taskId: number): boolean | null {
+    const s = this.lastSession(taskId);
+    if (!s || s.endedAt) return null;
+    if (this.hooked.get(taskId) === s.id) return true;
+    try {
+      return Date.now() - statSync(hookTrace(this.d.paths.runDir, taskId).startedFile).mtimeMs > HOOK_GRACE_MS ? false : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fallback for setups where claude never runs our hooks: follows the transcript claude
+   * writes in ~/.claude/projects and derives running / idle / permission from it and the screen.
+   */
+  private async inferWithoutHooks(taskId: number): Promise<void> {
+    const s = this.lastSession(taskId);
+    if (!s || s.endedAt || this.hooked.get(taskId) === s.id) return;
+    // count from the moment claude itself started (the setup script may run long before)
+    let started: number;
+    try {
+      started = statSync(hookTrace(this.d.paths.runDir, taskId).startedFile).mtimeMs;
+    } catch {
+      return;
+    }
+    if (Date.now() - started < HOOK_GRACE_MS) return;
+    if (this.d.chat.permissionKind(taskId) === 'trust') return; // claude hasn't really started yet
+
+    const file = findTranscript(this.row(taskId).worktreePath, started);
+    if (file && file !== s.transcriptPath) {
+      const sid = basename(file, '.jsonl');
+      this.d.db.update(sessions).set({ transcriptPath: file, claudeSessionId: sid }).where(eq(sessions.id, s.id)).run();
+      this.d.chat.follow(taskId, file, sid);
+      this.log(`[task ${taskId}] no hooks from claude — following its transcript ${file}`);
+    }
+    if (this.inferredStart.get(taskId) !== s.id) {
+      this.inferredStart.set(taskId, s.id);
+      await this.applyEvent(taskId, 'SessionStart', {});
+    }
+    if (!file) return;
+    this.d.chat.poke(taskId);
+
+    const t = this.row(taskId);
+    if (!LIVE.includes(t.status)) return;
+    const ts = turnState(file);
+    if (ts.state === 'running') {
+      if (ts.quietMs > 1500 && !this.d.chat.hasPermission(taskId)) {
+        const screen = await this.d.tmux.capture(Tmux.sessionName(taskId)).catch(() => '');
+        if (screenAsksPermission(screen)) {
+          if (ts.tool) this.lastTool.set(taskId, describeTool(ts.tool.name, ts.tool.input));
+          await this.applyEvent(taskId, 'Notification', { message: tr('Claude просить дозвіл'), notification_type: 'permission_prompt' });
+          return;
+        }
+      }
+      if (t.status !== 'running') await this.applyEvent(taskId, 'UserPromptSubmit', {});
+      if (ts.tool) {
+        const desc = describeTool(ts.tool.name, ts.tool.input);
+        if (desc !== this.lastTool.get(taskId)) await this.applyEvent(taskId, 'PreToolUse', { tool_name: ts.tool.name, tool_input: ts.tool.input });
+      }
+    } else if (ts.state === 'idle' && t.status === 'running') {
+      await this.applyEvent(taskId, 'Stop', {});
     }
   }
 
@@ -1141,8 +1240,8 @@ export class TaskService {
         this.d.hub.ensure(t.id, name);
         if (!LIVE.includes(t.status)) this.setStatus(t.id, 'running');
         // re-register hooks in case the server port changed
-        writeHooks(t.worktreePath, this.d.config.port, t.id, t.hookToken);
-        const died = `curl -s -m 3 -X POST ${shQuote(`http://127.0.0.1:${this.d.config.port}/api/hooks/${t.id}?event=PaneDied&token=${t.hookToken}`)} >/dev/null 2>&1 || true`;
+        writeHooks(t.worktreePath, this.d.config.port, t.id, t.hookToken, this.d.paths.runDir);
+        const died = `${curlPost(hookUrl(this.d.config.port, t.id, t.hookToken, 'PaneDied'), '{}')} >/dev/null 2>&1 || true`;
         await this.d.tmux.onPaneDied(name, died).catch(() => {});
         this.log(`[reconcile] task ${t.id}: re-attached to ${name}`);
       } else if (LIVE.includes(t.status) || pane.exists) {
@@ -1175,7 +1274,10 @@ export class TaskService {
     for (const t of live) {
       if (this.launching.has(t.id)) continue;
       const p = panes.get(Tmux.sessionName(t.id));
-      if (p && !p.dead) continue;
+      if (p && !p.dead) {
+        await this.inferWithoutHooks(t.id).catch((e) => this.log(`[task ${t.id}] transcript fallback: ${(e as Error).message}`));
+        continue;
+      }
       // re-check this task individually to avoid racing a launch in progress
       const now = await this.d.tmux.pane(Tmux.sessionName(t.id));
       if (now.exists && !now.dead) continue;
@@ -1336,6 +1438,7 @@ export function buildLauncher(o: {
   args: string[];
   env: Record<string, string | undefined>;
   setupScript: string | null;
+  probe?: string;
 }): string {
   const lines = ['#!/bin/sh', '# Generated by Vatra for one agent session.', `cd ${shQuote(o.cwd)} || exit 1`];
   // Never let the CLI fall back to API billing: use the Max subscription login.
@@ -1349,6 +1452,7 @@ export function buildLauncher(o: {
       `if [ "$rc" -ne 0 ]; then printf ${shQuote(`\\033[31m[vatra] ${tr('setup завершився з кодом %s — агент все одно стартує')}\\033[0m\\n`)} "$rc"; sleep 2; fi`,
     );
   }
+  if (o.probe) lines.push(o.probe);
   lines.push(`exec ${[o.claudeBin, ...o.args].map(shQuote).join(' ')}`);
   return lines.join('\n') + '\n';
 }

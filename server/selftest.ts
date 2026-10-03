@@ -71,7 +71,7 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
     const line = (k: string, v: string) => console.log(`      · ${k}: ${v}`);
     console.log('    diagnostics:');
     try {
-      line('claude', execFileSync(info.claudeBin ?? 'claude', ['--version'], { encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').at(-1)!);
+      line('claude', execFileSync(info.claudeBin ?? 'claude', ['--version'], { encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] }).split('\n').find((l) => /\d+\.\d+/.test(l))?.trim() ?? '?');
     } catch (e) {
       line('claude', `error ${(e as Error).message.split('\n')[0]}`);
     }
@@ -89,23 +89,33 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
         line('hooks file', `INVALID JSON: ${(e as Error).message}`);
       }
     }
-    for (const f of [join(homedir(), '.claude', 'settings.json'), join(homedir(), '.claude', 'settings.local.json'), join(wt, '.claude', 'settings.json')]) {
+    const managed = ['/Library/Application Support/ClaudeCode/managed-settings.json', '/etc/claude-code/managed-settings.json'];
+    for (const f of [...managed, join(homedir(), '.claude', 'settings.json'), join(homedir(), '.claude', 'settings.local.json'), join(wt, '.claude', 'settings.json')]) {
       if (!existsSync(f)) continue;
       try {
         const st = JSON.parse(readFileSync(f, 'utf8'));
         const flags = ['disableAllHooks', 'allowManagedHooksOnly'].filter((k) => k in st).map((k) => `${k}=${JSON.stringify(st[k])}`);
-        line(f, `hook events: ${Object.keys(st.hooks ?? {}).join(', ') || 'none'}${flags.length ? '; ' + flags.join(', ') : ''}; permissions.defaultMode=${st.permissions?.defaultMode ?? '-'}`);
+        line(f, `hook events: ${Object.keys(st.hooks ?? {}).join(', ') || 'none'}${flags.length ? '; ' + flags.join(', ') : ''}; permissions.defaultMode=${st.permissions?.defaultMode ?? '-'}; keys: ${Object.keys(st).join(', ')}`);
       } catch {
         line(f, 'unreadable');
       }
     }
     const before = (await api('GET', `/api/tasks/${taskId}`)).hooks;
     line('hook calls received by the server', `${before?.count ?? '?'} (rejected: ${before?.rejected ?? '?'}, last: ${before?.last ?? '-'})`);
-    if (stopCmd) {
-      // same command claude would run, but for a no-op event so the task state doesn't change
-      const cmd = stopCmd.replace('event=Stop', 'event=SessionEnd').replace(/ >\/dev\/null 2>&1 \|\| true/, ' -w " HTTP %{http_code}" 2>&1');
+    const trace = { ran: join(paths.runDir, `hooks-${taskId}.ran`), log: join(paths.runDir, `hooks-${taskId}.log`), flag: join(paths.runDir, `hooks-${taskId}.json`) };
+    line('claude ran a Vatra hook at least once', existsSync(trace.ran) ? 'yes (so the curl call fails — see the log below)' : 'NO — claude does not run these hooks at all');
+    line('--settings hooks file', existsSync(trace.flag) ? trace.flag : 'missing (server not rebuilt?)');
+    if (existsSync(trace.log)) {
+      console.log('      · failed hook calls (from the agent environment):');
+      for (const l of readFileSync(trace.log, 'utf8').trim().split('\n').slice(-8)) console.log(`          ${l}`);
+    }
+    const url = stopCmd?.match(/'(http:\/\/127\.0\.0\.1[^']+)'/)?.[1];
+    if (url) {
       try {
-        const out = execFileSync('/bin/sh', ['-c', cmd], { input: '{}', encoding: 'utf8', timeout: 10_000 });
+        const out = execFileSync('curl', ['--noproxy', '*', '-s', '-m', '3', '-X', 'POST', '-H', 'Content-Type: application/json', '--data-binary', '{}', '-w', ' HTTP %{http_code}', url.replace('event=Stop', 'event=Probe')], {
+          encoding: 'utf8',
+          timeout: 10_000,
+        });
         line('manual hook call', out.trim() || '(no output)');
       } catch (e) {
         line('manual hook call', `failed: ${(e as Error).message.split('\n')[0]}`);
@@ -184,13 +194,21 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
       report('fail', tr('ні картки довіри, ні хуків за 45 с — глянь вкладку «Термінал», claude може чекати на щось'));
     }
 
-    // 2. hooks + transcript
+    // 2. transcript (via hooks, or the fallback that reads it directly)
     const session = await waitFor(60_000, async () => (await api('GET', `/api/tasks/${task.id}/chat`)).sessionId);
-    if (session) report('ok', tr('хуки Claude Code працюють, транскрипт знайдено'));
-    else {
-      report('fail', tr('хуки не прийшли за 60 с (перевір .claude/settings.local.json у worktree)'));
+    if (!session) {
+      report('fail', tr('транскрипт claude не знайдено за 60 с — чат не працюватиме'));
       await diagnose(task.id, wt);
-      throw new Error('stopping here: the remaining checks need hooks');
+      throw new Error('stopping here: the remaining checks need the transcript');
+    }
+    const hooksWork = await waitFor(20_000, async () => {
+      const w = (await api('GET', `/api/tasks/${task.id}`)).hooks?.working;
+      return w === null || w === undefined ? null : { w };
+    });
+    if (hooksWork?.w) report('ok', tr('хуки Claude Code працюють, транскрипт знайдено'));
+    else {
+      report('warn', tr('claude не запускає хуки Ватри — працюю з його транскриптом напряму (статус може оновлюватись із затримкою в кілька секунд)'));
+      await diagnose(task.id, wt);
     }
 
     // 3. permission prompt for Bash → allow from the chat
@@ -208,7 +226,14 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
       if (ran) report('ok', tr('кнопка «Дозволити» спрацювала — команда виконалась'));
       else report('fail', tr('після «Дозволити» команда не виконалась — порядок пунктів у меню дозволу інший, скажи про це'));
     } else if (perm === 'done') {
-      report('warn', tr('дозвіл не знадобився (Bash уже дозволено у твоїх налаштуваннях) — картку дозволу не перевірено'));
+      let mode = '';
+      try {
+        mode = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8')).permissions?.defaultMode ?? '';
+      } catch {
+        /* no user settings */
+      }
+      if (mode && mode !== 'default') report('warn', tr('дозвіл не знадобився — у твоїх налаштуваннях claude режим дозволів «{mode}» — картку дозволу не перевірено', { mode }));
+      else report('warn', tr('дозвіл не знадобився (Bash уже дозволено у твоїх налаштуваннях) — картку дозволу не перевірено'));
     } else {
       report('fail', tr('ні запиту дозволу, ні результату за 150 с'));
     }
@@ -219,7 +244,7 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
       const t = (await api('GET', `/api/tasks/${task.id}`)).task;
       return t.status === 'idle' ? t : null;
     });
-    if (idle) report('ok', tr('хід завершився — статус «чекає» (хук Stop)'));
+    if (idle) report('ok', tr('хід завершився — статус «чекає»'));
     else report('fail', tr('агент не перейшов у «чекає» за 120 с'));
     const chat = await api('GET', `/api/tasks/${task.id}/chat`);
     if (chat.items.some((i: { kind: string }) => i.kind === 'assistant')) report('ok', tr('відповідь агента видно в чаті'));

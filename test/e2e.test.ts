@@ -34,6 +34,8 @@ async function startServer() {
       VATRA_GH: join(root, 'test/fake-gh.py'),
       FAKE_GH_STATE: join(home, 'gh-state'),
       ANTHROPIC_API_KEY: 'must-not-leak',
+      // fake claude writes transcripts where the real one does: <config>/projects/<cwd>
+      CLAUDE_CONFIG_DIR: join(home, 'claude-config'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -83,11 +85,15 @@ async function waitFor<T>(fn: () => Promise<T | undefined | false>, label: strin
 }
 
 const taskStatus = async (id: number) => (await api('GET', `/api/tasks/${id}`)).task;
-const waitStatus = (id: number, status: string) =>
-  waitFor(async () => {
-    const t = await taskStatus(id);
-    return t.status === status ? t : undefined;
-  }, `task ${id} → ${status}`);
+const waitStatus = (id: number, status: string, ms?: number) =>
+  waitFor(
+    async () => {
+      const t = await taskStatus(id);
+      return t.status === status ? t : undefined;
+    },
+    `task ${id} → ${status}`,
+    ms,
+  );
 
 function openPty(id: number): Promise<{ ws: WebSocket; out: () => string }> {
   return new Promise((res, rej) => {
@@ -320,6 +326,30 @@ describe('e2e', () => {
     expect(renamed.branch).toBe(t.branch);
     await api('POST', `/api/tasks/${t.id}/discard`);
   }, 60000);
+
+  it('works when claude never runs the hooks: transcript fallback, new trust dialog, permission from the screen', async () => {
+    const t = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'без хуків', prompt: 'no-hooks trust-new перший' });
+    await waitFor(async () => (await api('GET', `/api/tasks/${t.id}/chat`)).permission?.kind === 'trust', 'trust card');
+    await api('POST', `/api/tasks/${t.id}/keys`, { key: 'allow' }); // must pick "Yes, I trust" (second option)
+    await waitFor(async () => (await api('GET', `/api/tasks/${t.id}/chat`)).sessionId, 'transcript found without hooks', 30000);
+    await waitStatus(t.id, 'idle', 30000);
+    expect(readFileSync(join(t.worktreePath, 'agent.txt'), 'utf8')).toContain('перший');
+    const info = await api('GET', `/api/tasks/${t.id}`);
+    expect(info.hooks.working).toBe(false);
+    const chat = await api('GET', `/api/tasks/${t.id}/chat`);
+    expect(chat.items.some((i: any) => i.kind === 'assistant' && i.text.includes('Готово'))).toBe(true);
+
+    await api('POST', `/api/tasks/${t.id}/message`, { text: 'ask-permission друге' });
+    const perm = await waitFor(async () => {
+      const c = await api('GET', `/api/tasks/${t.id}/chat`);
+      return c.permission && c.permission.kind !== 'trust' ? c.permission : undefined;
+    }, 'permission card from the screen', 20000);
+    expect(perm.message).toBeTruthy();
+    await api('POST', `/api/tasks/${t.id}/keys`, { key: 'allow' });
+    await waitFor(async () => readFileSync(join(t.worktreePath, 'agent.txt'), 'utf8').includes('друге'), 'second turn', 15000);
+    await waitStatus(t.id, 'idle', 20000);
+    await api('POST', `/api/tasks/${t.id}/discard`);
+  }, 120000);
 
   it('follows a branch the agent renamed, merges it and cleans up', async () => {
     const t = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'rename me', prompt: 'renamed-branch-work' });

@@ -72,7 +72,6 @@ Usage: vatra <command>
   'ні картки довіри, ні хуків за 45 с — глянь вкладку «Термінал», claude може чекати на щось':
     'no trust card and no hooks within 45 s — check the "Terminal" tab, claude may be waiting for something',
   'хуки Claude Code працюють, транскрипт знайдено': 'Claude Code hooks work, transcript found',
-  'хуки не прийшли за 60 с (перевір .claude/settings.local.json у worktree)': 'no hooks arrived within 60 s (check .claude/settings.local.json in the worktree)',
   'запит дозволу зʼявився в чаті: {what}': 'permission request appeared in the chat: {what}',
   'кнопка «Дозволити» спрацювала — команда виконалась': 'the "Allow" button worked — the command ran',
   'після «Дозволити» команда не виконалась — порядок пунктів у меню дозволу інший, скажи про це':
@@ -81,7 +80,12 @@ Usage: vatra <command>
     'no permission was needed (Bash is already allowed in your settings) — the permission card was not checked',
   'ні запиту дозволу, ні результату за 150 с': 'no permission request and no result within 150 s',
   'агент виконав команду в своєму worktree': 'the agent ran the command in its worktree',
-  'хід завершився — статус «чекає» (хук Stop)': 'turn finished — status "waiting" (Stop hook)',
+  'хід завершився — статус «чекає»': 'turn finished — status "waiting"',
+  'транскрипт claude не знайдено за 60 с — чат не працюватиме': "claude's transcript not found within 60 s — the chat won't work",
+  'claude не запускає хуки Ватри — працюю з його транскриптом напряму (статус може оновлюватись із затримкою в кілька секунд)':
+    "claude doesn't run Vatra's hooks — reading its transcript directly instead (status may lag by a few seconds)",
+  'дозвіл не знадобився — у твоїх налаштуваннях claude режим дозволів «{mode}» — картку дозволу не перевірено':
+    'no permission needed — your claude settings use permission mode "{mode}" — the permission card was not checked',
   'агент не перейшов у «чекає» за 120 с': 'the agent did not switch to "waiting" within 120 s',
   'відповідь агента видно в чаті': "the agent's reply is visible in the chat",
   'у чаті немає відповіді агента — парсер транскрипту не впізнав формат': "no agent reply in the chat — the transcript parser didn't recognize the format",

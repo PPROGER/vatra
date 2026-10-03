@@ -13,6 +13,10 @@ if "--resume" in args:
     SID = args[args.index("--resume") + 1]
 
 TDIR = os.path.join(tempfile.gettempdir(), "fake-claude-transcripts")
+if os.environ.get("CLAUDE_CONFIG_DIR"):
+    # like the real CLI: <config>/projects/<cwd with non-alphanumerics replaced by '-'>
+    import re
+    TDIR = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd())))
 os.makedirs(TDIR, exist_ok=True)
 TRANSCRIPT = os.path.join(TDIR, SID + ".jsonl")
 USED = [12000]
@@ -33,7 +37,7 @@ def assistant(content):
             "usage": {"input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_input_tokens": USED[0], "output_tokens": 200}}})
 
 def hook(event, extra=None):
-    if os.environ.get('FAKE_NO_HOOKS'):
+    if os.environ.get('FAKE_NO_HOOKS') or any("no-hooks" in a for a in args):
         return
     try:
         settings = json.load(open(".claude/settings.local.json"))
@@ -45,19 +49,24 @@ def hook(event, extra=None):
             payload.update(extra or {})
             subprocess.run(h["command"], shell=True, input=json.dumps(payload).encode())
 
+MENU = "Do you want to proceed?\n > 1. Yes\n   2. Yes, and don't ask again\n   3. No"
+
 def work(text):
     if "echo vatra-ok > hello.txt" in text:
         hook("UserPromptSubmit", {"prompt": text})
         record({"type": "user", "message": {"role": "user", "content": text}})
         tool_input = {"command": "echo vatra-ok > hello.txt"}
+        assistant([{"type": "tool_use", "id": "toolu_bash1", "name": "Bash", "input": tool_input}])
         hook("PreToolUse", {"tool_name": "Bash", "tool_input": tool_input})
         hook("Notification", {"message": "Claude needs your permission to use Bash", "notification_type": "permission_prompt"})
+        print(MENU, flush=True)
         if sys.stdin.readline().strip():
             return
         with open("hello.txt", "w") as f:
             f.write("vatra-ok\n")
         hook("PostToolUse", {"tool_name": "Bash", "tool_input": tool_input})
         assistant([{"type": "text", "text": "done"}])
+        record({"type": "system", "subtype": "turn_duration", "durationMs": 1000})
         hook("Stop")
         return
     if text.startswith("/"):
@@ -76,6 +85,7 @@ def work(text):
     if "ask-permission" in text:
         hook("Notification", {"message": "Claude needs your permission to use Write", "notification_type": "permission_prompt"})
         print("[fake-claude] waiting for permission (Enter = yes)", flush=True)
+        print(MENU, flush=True)
         answer = sys.stdin.readline().strip()
         if answer:
             print("[fake-claude] denied", flush=True)
@@ -89,12 +99,19 @@ def work(text):
         {"type": "tool_result", "tool_use_id": tool_id, "content": "File written successfully"}]}})
     hook("PostToolUse", {"tool_name": "Write", "tool_input": tool_input})
     assistant([{"type": "text", "text": f"**Готово.** Додав рядок `{text}`."}])
+    record({"type": "system", "subtype": "turn_duration", "durationMs": 1000})
     print(f"[fake-claude] wrote: {text}", flush=True)
     hook("Stop")
 
 print(f"[fake-claude] session {SID} args={args!r} PORT={os.environ.get('PORT')} API_KEY={'set' if os.environ.get('ANTHROPIC_API_KEY') else 'unset'}", flush=True)
 print("MODE=RESUMED" if "--resume" in args else "MODE=FRESH", flush=True)
-if any(("trust-me" in a or "automated check of the Vatra" in a) for a in args) and "--resume" not in args:
+if any("trust-new" in a for a in args) and "--resume" not in args:
+    # the 2026 dialog: "No, exit" is the first (selected) option
+    print("Quick safety check: Is this a project you created or one you trust?\n > No, exit\n   Yes, I trust this folder", flush=True)
+    if "\x1b[B" not in sys.stdin.readline():
+        sys.exit(1)
+    print("[fake-claude] trusted", flush=True)
+elif any(("trust-me" in a or "automated check of the Vatra" in a) for a in args) and "--resume" not in args:
     print("Do you trust the files in this folder?  1. Yes, proceed  2. No, exit", flush=True)
     if sys.stdin.readline().strip():
         sys.exit(1)
@@ -104,7 +121,7 @@ hook("SessionStart", {"source": "resume" if "--resume" in args else "startup"})
 # so tests can't pass by racing it (CI on macOS is slower than a dev box)
 import time
 time.sleep(0.4)
-positional = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--resume")]
+positional = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--resume", "--settings"))]
 if positional:
     work(positional[-1])
 # like the real TUI, ask the terminal for bracketed paste so multi-line pastes arrive as one message

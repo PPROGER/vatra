@@ -130,6 +130,7 @@ Vatra removes `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` from the agents' envi
 - **Build fails with node-gyp errors**: install the compiler (Xcode CLT / `build-essential python3`) and re-run the installer.
 - **`claude` not found when running as a service**: Vatra looks in `PATH`, your login shell and common locations. Otherwise set `claudeBin` in `config.json`.
 - **Many files on Linux**: raise the inotify limit, e.g. `echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-inotify.conf && sudo sysctl --system`.
+- **Chat status doesn't update / `vatra selftest` says claude doesn't run Vatra's hooks**: Vatra registers Claude Code hooks (in the worktree's `.claude/settings.local.json` and via `--settings`). If your setup never runs them, Vatra falls back to reading claude's transcript and screen, so everything still works, only status changes can lag by a few seconds. `vatra selftest` prints diagnostics for this case.
 - **Port in use**: `VATRA_PORT=4318 vatra start` or set `port` in `config.json`.
 
 ## Uninstall

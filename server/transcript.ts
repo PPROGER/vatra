@@ -305,6 +305,11 @@ export class ChatHub {
     this.emit({ type: 'chat_meta', taskId, permission: m.permission, activity: m.activity });
   }
 
+  permissionKind(taskId: number): string | null {
+    const p = this.meta.get(taskId)?.permission;
+    return p ? (p.kind ?? 'tool') : null;
+  }
+
   hasPermission(taskId: number): boolean {
     return !!this.meta.get(taskId)?.permission;
   }

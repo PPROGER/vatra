@@ -1,5 +1,6 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_SERVER: Record<string, string> = {
+  'Claude просить дозвіл': 'Claude asks for permission',
   "Claude вперше бачить цю папку (worktree задачі) і питає, чи довіряти її файлам.": "Claude is seeing this folder (the task's worktree) for the first time and asks whether to trust its files.",
   "Проєкт не знайдено": "Project not found",
   "Проєкт уже додано: {name}": "Project already added: {name}",
