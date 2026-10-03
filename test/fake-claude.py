@@ -84,6 +84,10 @@ if any("trust-me" in a for a in args) and "--resume" not in args:
         sys.exit(1)
     print("[fake-claude] trusted", flush=True)
 hook("SessionStart", {"source": "resume" if "--resume" in args else "startup"})
+# real claude takes a moment between SessionStart and the first prompt; keep that gap
+# so tests can't pass by racing it (CI on macOS is slower than a dev box)
+import time
+time.sleep(0.4)
 positional = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--resume")]
 if positional:
     work(positional[-1])

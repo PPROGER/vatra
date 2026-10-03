@@ -339,6 +339,7 @@ export class TaskService {
   }
 
   private pendingMessages = new Map<number, string>();
+  private startsWithPrompt = new Set<number>();
   private lastTool = new Map<number, string>();
 
   private launching = new Set<number>();
@@ -380,6 +381,9 @@ export class TaskService {
     const firstMessage = isFirst ? (t.prompt ?? undefined) : undefined;
     const message = opts.initialMessage ?? firstMessage;
     if (message) args.push(message);
+    // claude will start working on this prompt right after SessionStart — don't flash "idle"
+    if (message && !message.trimStart().startsWith('/')) this.startsWithPrompt.add(taskId);
+    else this.startsWithPrompt.delete(taskId);
 
     const port = t.port ?? this.allocatePort();
     const sessionRow = this.d.db
@@ -689,8 +693,13 @@ export class TaskService {
     const chat = this.d.chat;
     switch (event) {
       case 'SessionStart':
-        this.update(taskId, { status: 'idle', lastMessage: null });
-        chat.setMeta(taskId, { permission: null, activity: null });
+        if (this.startsWithPrompt.delete(taskId)) {
+          this.update(taskId, { status: 'running', lastMessage: null });
+          chat.setMeta(taskId, { permission: null, activity: 'Думає…' });
+        } else {
+          this.update(taskId, { status: 'idle', lastMessage: null });
+          chat.setMeta(taskId, { permission: null, activity: null });
+        }
         break;
       case 'UserPromptSubmit':
         if (t.status !== 'running' || t.lastMessage) this.update(taskId, { status: 'running', lastMessage: null });

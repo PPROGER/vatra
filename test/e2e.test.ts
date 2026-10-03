@@ -345,6 +345,7 @@ describe('e2e', () => {
     await api('PATCH', `/api/projects/${projectId}`, { merge_mode: 'pr' });
     try {
       const t = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'via pr', prompt: 'pr-work' });
+      await waitFor(async () => existsSync(join(t.worktreePath, 'agent.txt')), 'agent wrote its file');
       await waitStatus(t.id, 'idle');
 
       const first = await api('POST', `/api/tasks/${t.id}/pr`);
@@ -434,6 +435,10 @@ describe('e2e', () => {
   }, 60000);
 
   it('respects maxActive with a queue', async () => {
+    // start from zero live agents, whatever earlier tests left behind
+    for (const t of await api('GET', '/api/tasks')) {
+      if (['creating', 'queued', 'running', 'idle', 'review', 'error'].includes(t.status)) await api('POST', `/api/tasks/${t.id}/discard`);
+    }
     // default maxActive=4; fill it
     const ids: number[] = [];
     for (let i = 0; i < 5; i++) ids.push((await api('POST', `/api/projects/${projectId}/tasks`, { title: `q${i}`, prompt: 'p' })).id);
