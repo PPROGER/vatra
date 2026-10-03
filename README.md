@@ -1,97 +1,103 @@
-# Ватра (vatra)
+# 🔥 Vatra
 
-Особиста «ватра» для агентів: локальний веб-дашборд, де кілька Claude Code працюють паралельно, а ти спілкуєшся з кожним у чаті. Кожна задача — окремий git worktree з гілкою `agent/<slug>` і власним **інтерактивним** `claude`, запущеним у tmux. Код нікуди не вивантажується, агенти працюють на лімітах твоєї Max-підписки.
+**English** · [Українська](README.uk.md)
 
-- UI: `http://localhost:4317` (сервер слухає лише `127.0.0.1`)
-- macOS і Linux (Windows — через WSL2)
-- Агент — офіційний `claude` CLI у справжньому терміналі (tmux + node-pty), не `claude -p` і не SDK
-- Ізоляція — лише файлова (worktree + гілка); процеси, мережа й права — твої
+Vatra (Ukrainian for *campfire*) is a local web dashboard for running several **interactive Claude Code agents in parallel**. Every task gets its own git worktree and branch, its own `claude` running in a real terminal (tmux), and a chat window where you talk to it. When the work is done you review the diff and open a PR or merge it.
 
-## Вимоги
+- Runs entirely on your machine (macOS, Linux, WSL2). Nothing is uploaded anywhere.
+- Uses the official `claude` CLI in interactive mode, so it runs on your Claude Pro/Max subscription. It doesn't use `claude -p` or the Agent SDK.
+- Isolation is file-level only (worktree + branch); agents run as your user.
+
+> The UI is currently in Ukrainian.
+
+## Install
+
+One command (macOS, Linux, WSL2):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/PPROGER/vatra/main/install.sh | bash
+```
+
+The installer:
+
+1. Checks git, tmux and a C/C++ toolchain, and offers to install missing ones via brew / apt / dnf / pacman / zypper.
+2. Checks for Node.js 22+.
+3. Clones Vatra into `~/.vatra-app` and builds it.
+4. Puts a `vatra` command into `~/.local/bin`.
+
+It asks before installing anything. Options: `--service` (start in the background at login), `--yes` (don't ask), `--dir <path>`, `--no-deps`.
+
+Then:
+
+```bash
+claude                 # once: /login with your Pro/Max account
+vatra start --open     # → http://localhost:4317
+```
+
+| Command | What it does |
+|---|---|
+| `vatra start [--open]` | start the server (UI at http://localhost:4317) |
+| `vatra open` | open the UI in your browser |
+| `vatra doctor` | check git, tmux, claude, gh and native modules |
+| `vatra update` | `git pull`, install, build, restart the background service |
+| `vatra install-service` / `uninstall-service` | run in the background (launchd / `systemd --user`) |
+
+Manual install from a clone: `corepack pnpm install && corepack pnpm build && node dist/server/cli.js start`.
+
+### Requirements
 
 | | macOS | Linux |
 |---|---|---|
-| Node | 22+ | 22+ |
-| pnpm | `corepack enable` | `corepack enable` |
-| git, tmux | `brew install tmux` | `sudo apt install tmux git` |
-| збірка node-pty / better-sqlite3 | Xcode Command Line Tools | `build-essential python3` |
-| Claude Code | `claude` у PATH, один раз `claude /login` | те саме |
-| Сповіщення | вбудовано (`osascript`) | `notify-send` (libnotify) |
-| PR (необовʼязково) | `gh auth login` | те саме |
+| Node.js | 22+ (`brew install node` or nvm) | 22+ (nvm) |
+| git, tmux | `brew install tmux` | `apt install git tmux` |
+| compiler for node-pty / better-sqlite3 | Xcode Command Line Tools | `build-essential python3` |
+| Claude Code | `npm i -g @anthropic-ai/claude-code`, then `claude` → `/login` | same |
+| notifications | built in | `notify-send` (libnotify) |
+| PRs (optional) | `brew install gh && gh auth login` | `apt install gh` |
 
-## Встановлення і запуск
+## How it works
 
-```bash
-cd ~/Documents/projects/vatra
-pnpm install
-pnpm build
-pnpm doctor        # перевірить git, tmux, claude, нативні модулі
-pnpm start         # → http://localhost:4317
-```
+1. **Add a project.** Pick a git repository with the native folder dialog, the built-in browser, or from the list of repositories Vatra found. The setup script (from the lockfile) and `.env` files to copy are filled in automatically.
+2. **New task = an empty chat.** Write what needs doing, attach files, press Enter. Vatra then:
+   - runs `git worktree add -b agent/<slug>` from the base branch;
+   - copies the env files and runs the setup script;
+   - starts `claude "<your message>"` in tmux.
 
-Автозапуск у фоні (launchd на macOS, `systemd --user` на Linux):
+   The first line of your message becomes the task title.
+3. **Chat** with the agent. It's the same interactive session you'd have in a terminal:
+   - history is read from Claude Code's own transcript;
+   - message statuses (sent → received → answered) and live "what the agent is doing";
+   - every slash command works (`/compact`, `/clear`, `/review`, your own commands and skills), plus `@file` mentions, `!bash`, and attachments (paste screenshots, drag & drop);
+   - context window usage;
+   - permission prompts and the "trust this folder?" prompt get buttons right in the chat.
 
-```bash
-node dist/server/cli.js install-service     # логи: ~/.vatra/logs/server.log
-node dist/server/cli.js uninstall-service
-```
+   A raw **Terminal** tab is always there for interactive menus.
+4. **Diff** tab: everything vs. the base commit, only commits, or only uncommitted changes. Updates live.
+5. **Finish the task.** The project setting picks which button is the main one:
+   - **Create PR**: pushes the agent branch and opens a PR with `gh`. Without `gh`, it opens GitHub's "new pull request" page instead. Later pushes update the same PR. Once the PR is merged on GitHub, Vatra stops the agent and cleans up.
+   - **Merge ▾**: merge or squash into the base branch, optionally followed by `git push`. Your current checkout is never switched; a temporary worktree is used when needed. On a conflict the merge is aborted and the agent is asked to rebase.
+   - **Discard**: stops the agent and removes its worktree and branch.
 
-Розробка: `pnpm dev` (сервер з `tsx watch` + Vite на :5173; адресу з токеном друкує сервер).
+Agents live in tmux sessions (`tmux -L vatra ls`), so restarting the server doesn't kill them. If an agent renames its branch (e.g. because your CLAUDE.md asks for `feat/...` names), Vatra follows it. Vatra only ever deletes branches the task itself created.
 
-## Як користуватись
+## Using it from another device
 
-1. **Додати проєкт.** Натисни «Finder…» (системний діалог вибору папки), «Огляд…» (вбудований оглядач, git-репозиторії позначені ◆) або клікни один із знайдених репозиторіїв. Назва, setup script (за lock-файлом: pnpm/npm/yarn/bun/uv/poetry…) і `.env`-файли заповнюються самі — перевір і натисни «Додати».
-2. **Нова задача** — це просто порожній чат: «+ Нова задача» (або «+» біля проєкту), пишеш що зробити, прикріплюєш файли, Enter. Перший рядок стає назвою (її можна змінити кліком у заголовку задачі), гілка — `agent/<slug>`; проєкт і базову гілку обираєш угорі. Сервер робить `git fetch`, `git worktree add -b agent/<slug> <path> <base_commit>`, копіює env-файли, прописує хуки, запускає setup і `claude "<prompt>"` у tmux.
-3. **Чат** (основна вкладка) — розмова з агентом як у месенджері. Під капотом це та сама інтерактивна сесія `claude`, що й у терміналі:
-   - історія береться з транскрипту Claude Code (`~/.claude/projects/…/<session>.jsonl`): твої повідомлення, відповіді в markdown, виклики інструментів (Bash, Edit з міні-дифом, Write, TodoWrite як чекліст…) з результатами;
-   - статуси повідомлень: ◷ надсилається → ✓ введено в термінал → ✓✓ агент отримав → ✓✓ (зелені) агент відповів; поки агент працює — індикатор з поточною дією («Bash: pnpm test») і кнопка «перервати» (Esc);
-   - **будь-які slash-команди** — `/compact`, `/clear`, `/context`, `/cost`, `/review`, `/init`, твої команди з `.claude/commands` і skills. Набери `/` — зʼявиться автодоповнення. Команди з інтерактивним меню (`/model` без аргументу, `/config`, `/permissions`, `/mcp`…) автоматично відкривають вкладку «Термінал»;
-   - `!команда` — bash-режим claude, `#текст` — запис у памʼять;
-   - `@` — автодоповнення файлів і папок репозиторію;
-   - **файли**: скріпка, перетягування у вікно або вставка з буфера (скріншоти). Файли зберігаються поза репозиторієм (`~/.vatra/uploads/`), агент отримує їхні шляхи й читає через Read — зображення теж;
-   - **контекст**: модель і шкала заповнення контекстного вікна (з `usage` останньої відповіді) + кнопки `/compact`, `/context`, `/cost`, `/clear`, `⇧Tab режим` (звичайний → auto-accept → plan);
-   - **дозволи**: коли агент просить дозвіл, у чаті зʼявляється картка з інструментом і кнопками «Дозволити», «Дозволити й не питати», «Відхилити».
-4. **Термінал** — сирий TUI `claude` (xterm.js). `Shift+Enter` — новий рядок.
-
-При першому запуску в новому worktree `claude` питає, чи довіряти папці. Ватра помічає це на екрані агента й показує в чаті картку «Довіряти папці?» з кнопкою «Довіряю, працюй».
-5. Коли агент завершує хід або просить дозвіл, приходить системне сповіщення, а задача стає «чекає».
-6. **Диф** — «Усе» (від `base_commit`, включно з незакоміченим), «Коміти» (`git diff base...agent/<slug>`), «Робочі» (`git diff HEAD` + нові файли). Оновлюється наживо. «Чат + диф» — обидва поруч.
-7. **Завершення задачі.** Доступні обидва шляхи, а в налаштуваннях проєкту обираєш, який з них головний:
-   - **Створити PR** — комітить залишки, пушить гілку агента (`--force-with-lease`) і відкриває PR у базову гілку через `gh`. «Оновити PR» пушить нові коміти в той самий PR. Ватра кожні 2 хв (або за кнопкою ↻) питає GitHub про стан PR; коли його зіллють — агент зупиняється, worktree і локальна гілка прибираються. **Без `gh`** гілка все одно пушиться, а Ватра відкриває сторінку створення PR на GitHub.
-   - **Злити ▾** — «Злити й запушити» / «Squash і запушити» (merge у базову + `git push origin <base>`) або те саме локально без push. Твій поточний checkout не перемикається: якщо базова гілка ніде не відкрита, злиття йде в тимчасовому worktree. Перед push базова гілка підтягується з origin (fast-forward); якщо вона розійшлася з origin — відмова з поясненням. Конфлікт → `merge --abort`, задача лишається в «ревʼю», агент отримує прохання зробити rebase.
-8. Якщо агент сам перейменував гілку чи перейшов на іншу (наприклад, через правила в CLAUDE.md), Ватра йде за тією гілкою, що реально стоїть у worktree. Видаляються лише гілки, створені самою задачею.
-9. **Відкинути** — вбиває агента, видаляє worktree і гілку.
-
-Якщо агент не запущений, повідомлення з чату перезапускає його з `claude --resume <session>` і цим повідомленням.
-
-На macOS кнопка «Finder…» при першому використанні може попросити дозвіл на керування «System Events» (щоб діалог зʼявлявся поверх браузера). Якщо відмовити — діалог усе одно працює, але може відкритися за вікнами.
-
-## Стани задачі
-
-`creating` → `queued` (чекає слота) → `running` ⇄ `idle` → `review` → `merged` / `discarded`; помилка на будь-якому кроці → `error` з причиною.
-
-`running`/`idle` визначаються хуками Claude Code (`SessionStart`, `UserPromptSubmit`, `PostToolUse`, `Stop`, `Notification`), які шлють POST на `/api/hooks/:taskId`. Коли процес `claude` завершується, tmux-хук `pane-died` переводить задачу в `review`.
-
-## Агенти живуть у tmux
-
-Кожен агент — сесія `vatra-<taskId>` на окремому сокеті. Сервер можна перезапускати: агенти не вмирають, а після старту сервер знову до них підключається. Підчепитися напряму з термінала:
+The server only listens on `127.0.0.1` on purpose: a terminal in the browser means running commands on that machine. To use Vatra running on another computer (a home Mac, a Linux box), forward the port over SSH:
 
 ```bash
-tmux -L vatra ls
-tmux -L vatra attach -t vatra-3   # вийти, не вбиваючи агента: Ctrl-b d
+ssh -N -L 4317:localhost:4317 user@host
+# then open http://localhost:4317 locally
 ```
 
-## Дані і конфіг
+**Why no Docker image?** Vatra drives the `claude` CLI logged in with *your* subscription, your local repositories, your SSH keys and tmux on the host. Running it in a container would mean mounting all of that into it, so a native install is simpler and safer.
+
+## Data & configuration
 
 | | macOS | Linux |
 |---|---|---|
-| Каталог даних | `~/.vatra` | `$XDG_DATA_HOME/vatra` (`~/.local/share/vatra`) |
+| data directory | `~/.vatra` | `$XDG_DATA_HOME/vatra` (`~/.local/share/vatra`) |
 
-Усередині: `state.db` (SQLite), `worktrees/<project>/<slug>`, `logs/` (повний вивід кожної сесії), `uploads/`, `config.json`, `token`. `VATRA_HOME` перевизначає шлях.
-
-Перехід з попередньої назви (Local Delta): якщо `~/.vatra` ще немає, а `~/.localdelta` є, Ватра продовжує працювати зі старим каталогом — проєкти, задачі й живі агенти (вони перейменовуються з `ld-<id>` на `vatra-<id>`) на місці. Змінні `LOCALDELTA_*` теж підхоплюються. `install-service` прибирає старий автозапуск.
-
-`config.json`:
+`state.db` (SQLite), `worktrees/`, `logs/`, `uploads/`, `config.json`, `token`. Override the location with `VATRA_HOME`.
 
 ```json
 {
@@ -100,67 +106,46 @@ tmux -L vatra attach -t vatra-3   # вийти, не вбиваючи агент
   "portRange": [5100, 5199],
   "claudeBin": null,
   "claudeArgs": [],
-  "ringBufferBytes": 204800,
-  "tmuxSocket": "vatra",
-  "contextWindow": 1000000
+  "contextWindow": 1000000,
+  "tmuxSocket": "vatra"
 }
 ```
 
-- `maxActive` — скільки агентів одночасно мають живу сесію (усі їдять одні ліміти Max); решта чекає в черзі.
-- `portRange` — кожна задача отримує власний `PORT` у env, щоб dev-сервери не конфліктували. База даних лишається спільною.
-- `contextWindow` — розмір контекстного вікна для шкали в чаті (на Max — 1M; постав `200000`, якщо працюєш з моделлю на 200k).
-- `claudeArgs` — додаткові аргументи для кожного запуску, напр. `["--model", "opus"]` або `["--permission-mode", "acceptEdits"]`.
+- `maxActive`: how many agents can have a live session at once. All agents share your plan's limits; the rest wait in a queue.
+- `portRange`: each task gets its own `PORT` env var so dev servers don't collide.
+- `claudeArgs`: extra flags for every launch, e.g. `["--model", "opus"]`.
+- `contextWindow`: size used for the context usage bar.
 
-## Підписка, а не API
+Vatra removes `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` from the agents' environment so the CLI uses your subscription login instead of API billing. Check Anthropic's current usage policy for your plan.
 
-Перед запуском `claude` сервер прибирає з env `ANTHROPIC_API_KEY` і `ANTHROPIC_AUTH_TOKEN`, інакше CLI піде на API-білінг. Логін — один раз `claude /login` у звичайному терміналі (Keychain на macOS, `~/.claude/.credentials.json` на Linux); всі сесії його підхоплюють. Перед активним використанням перевір актуальні правила використання підписки на support.claude.com.
+## Troubleshooting
 
-## Безпека
+- **`posix_spawnp failed` on macOS**: node-pty's `spawn-helper` lost its executable bit. Run `corepack pnpm install` again; the postinstall step fixes it.
+- **Build fails with node-gyp errors**: install the compiler (Xcode CLT / `build-essential python3`) and re-run the installer.
+- **`claude` not found when running as a service**: Vatra looks in `PATH`, your login shell and common locations. Otherwise set `claudeBin` in `config.json`.
+- **Many files on Linux**: raise the inotify limit, e.g. `echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-inotify.conf && sudo sysctl --system`.
+- **Port in use**: `VATRA_PORT=4318 vatra start` or set `port` in `config.json`.
 
-- Worktree — не пісочниця: агент має ті самі права, що й ти. Режим дозволів Claude Code лишається звичайним (без `--dangerously-skip-permissions`).
-- Сервер слухає лише `127.0.0.1`, перевіряє `Host`/`Origin` (захист від DNS-rebinding) і випадковий токен у кожному API-запиті та WebSocket — термінал у браузері означає виконання довільних команд.
-- Хуки пишуться у `.claude/settings.local.json` worktree з окремим токеном задачі; файл додається в `.git/info/exclude` і не потрапляє в коміти. Скопійовані env-файли теж виключаються.
-
-## Нюанси
-
-- **macOS, `posix_spawnp failed`**: у node-pty з pnpm буває, що `spawn-helper` втрачає біт виконання. `postinstall` це виправляє; вручну — `pnpm install` ще раз.
-- **Linux, inotify**: за великих репо підніми ліміт — `echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-inotify.conf && sudo sysctl --system`. `node_modules`, `.git`, `dist` тощо вже ігноруються.
-- **claude не знайдено** при автозапуску: сервер шукає його в PATH, у login shell і в типових місцях; інакше задай `claudeBin` у `config.json`.
-- **Zed на Linux** може називатися `zeditor` — підтримуються обидва.
-
-## Структура
-
-```
-server/
-  cli.ts        start | doctor | install-service | uninstall-service
-  app.ts        Fastify: REST, WebSocket, статика UI, токен
-  service.ts    життєвий цикл задач, черга, хуки, merge/discard/PR, звірка після рестарту
-  git.ts        усі git-операції (worktree, diff, merge, cleanup)
-  tmux.ts       сесії агентів на окремому tmux-сокеті
-  pty.ts        node-pty міст tmux ↔ браузер, кільцевий буфер
-  hooks.ts      .claude/settings.local.json з хуками
-  transcript.ts транскрипт claude (JSONL) → повідомлення чату, контекст, статус
-  commands.ts   slash-команди для автодоповнення (вбудовані, проєкту, твої, skills)
-  fsapi.ts      вибір папки: системний діалог, оглядач, пошук репозиторіїв
-  watcher.ts    chokidar → подія diff_changed (debounce 500 мс)
-  platform.ts   macOS/Linux різниця: сповіщення, open, шляхи, пошук claude
-  db.ts         SQLite + Drizzle
-web/src/        React + Tailwind, чат (react-markdown), xterm.js, diff2html
-test/           e2e: справжні git і tmux, фейковий claude
-```
-
-## Тести
+## Uninstall
 
 ```bash
-pnpm test        # git-шар + e2e (потрібні git і tmux)
-pnpm typecheck
+vatra uninstall-service
+tmux -L vatra kill-server          # stop all agents
+rm -rf ~/.vatra-app ~/.local/bin/vatra
+rm -rf ~/.vatra                    # data: projects, tasks, worktrees, logs
 ```
 
-e2e піднімає справжній сервер на випадковому порту, з окремим tmux-сокетом і `test/fake-claude.py` замість `claude` (він пише транскрипт у форматі Claude Code), і проганяє повний цикл: створення → хуки → термінал по WebSocket → диф → restart з `--resume` → squash merge, discard, чат (транскрипт, повідомлення з вкладенням, slash-команда, картка дозволу, @-файли), конфлікт з проханням про rebase, переживання рестарту сервера, черга `maxActive`, вибір папки.
+## Development
 
-## Що далі (v2)
+```bash
+git clone https://github.com/PPROGER/vatra.git && cd vatra
+corepack pnpm install
+corepack pnpm dev      # server with tsx watch + Vite on :5173 (the server prints the URL with a token)
+corepack pnpm test     # git layer + end-to-end tests with real git/tmux and a fake claude
+```
 
-- Коментарі до рядків дифу → повідомлення в чат агенту
-- Monaco diff editor
-- Кнопка «Rebase на base» без участі агента
-- Історія сесій і перегляд логів у UI
+Stack: Node 22 + Fastify, node-pty + tmux, better-sqlite3 + Drizzle, React + Vite + Tailwind, xterm.js, diff2html.
+
+## License
+
+MIT

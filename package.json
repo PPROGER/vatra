@@ -1,8 +1,25 @@
 {
   "name": "vatra",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Vatra — parallel interactive Claude Code agents in git worktrees, with a local web dashboard",
+  "description": "Vatra (Ватра) — a local web dashboard for running parallel interactive Claude Code agents, each in its own git worktree",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agents",
+    "git-worktree",
+    "tmux",
+    "dashboard",
+    "ai-coding"
+  ],
+  "homepage": "https://github.com/PPROGER/vatra#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PPROGER/vatra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PPROGER/vatra/issues"
+  },
   "type": "module",
   "license": "MIT",
   "author": "Andrii Korniienko",
@@ -13,10 +30,10 @@
     "vatra": "dist/server/cli.js"
   },
   "scripts": {
-    "dev": "concurrently -k -n server,web -c blue,magenta \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev": "concurrently -k -n server,web -c blue,magenta \"tsx watch server/cli.ts start --dev\" \"vite\"",
     "dev:server": "tsx watch server/cli.ts start --dev",
     "dev:web": "vite",
-    "build": "pnpm build:server && pnpm build:web",
+    "build": "tsc -p tsconfig.server.json && vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "build:web": "vite build",
     "start": "node dist/server/cli.js start",
@@ -24,7 +41,8 @@
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "node scripts/fix-node-pty.mjs"
+    "postinstall": "node scripts/fix-node-pty.mjs",
+    "setup": "corepack pnpm install && corepack pnpm build"
   },
   "dependencies": {
     "@fastify/static": "^8.2.0",
@@ -65,5 +83,10 @@
       "node-pty",
       "esbuild"
     ]
-  }
+  },
+  "packageManager": "pnpm@10.28.0",
+  "os": [
+    "darwin",
+    "linux"
+  ]
 }

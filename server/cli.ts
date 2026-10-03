@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { EventEmitter } from 'node:events';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createRequire } from 'node:module';
@@ -38,7 +38,7 @@ const version = (() => {
   }
 })();
 
-async function start(dev: boolean) {
+async function start(dev: boolean, openUi = false) {
   if (!isSupportedPlatform()) {
     console.error('Vatra підтримує лише macOS і Linux (Windows — через WSL2).');
     process.exit(1);
@@ -105,7 +105,12 @@ async function start(dev: boolean) {
   try {
     await app.listen({ host: '127.0.0.1', port: config.port });
   } catch (err) {
-    console.error(`Не вдалося зайняти 127.0.0.1:${config.port}: ${(err as Error).message}`);
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      console.error(`Порт ${config.port} уже зайнятий — мабуть, Ватра вже працює: http://localhost:${config.port}`);
+      console.error('Інший порт: VATRA_PORT=4318 vatra start (або "port" у config.json).');
+    } else {
+      console.error(`Не вдалося зайняти 127.0.0.1:${config.port}: ${(err as Error).message}`);
+    }
     process.exit(1);
   }
   // reconcile after listen: hooks of running agents may call us right away
@@ -127,6 +132,7 @@ async function start(dev: boolean) {
   console.log(`Ватра (Vatra) ${version} · ${url}`);
   console.log(`  дані: ${paths.dataDir} · tmux: ${tmuxVersion} (-L ${config.tmuxSocket}) · claude: ${claudeBin ?? '—'}`);
   for (const w of warnings) console.warn(`  ! ${w}`);
+  if (openUi && !dev) openBrowser(url);
 
   const shutdown = async (sig: string) => {
     console.log(`\n${sig}: зупиняюсь. Агенти лишаються жити в tmux і підхопляться при наступному старті.`);
@@ -285,13 +291,79 @@ function uninstallService() {
   console.log(`Видалено ${file}. Агенти в tmux (-L vatra) не зачеплено.`);
 }
 
+function serverUrl(): string {
+  const cfg = loadConfig(getPaths());
+  return `http://localhost:${cfg.port}`;
+}
+
+function openBrowser(url: string) {
+  const cmd = platform === 'darwin' ? 'open' : 'xdg-open';
+  try {
+    spawn(cmd, [url], { detached: true, stdio: 'ignore' }).on('error', () => console.log(`Відкрий у браузері: ${url}`)).unref();
+  } catch {
+    console.log(`Відкрий у браузері: ${url}`);
+  }
+}
+
+/** git pull + install + build in the install directory, then restart the service if there is one. */
+function update() {
+  if (!existsSync(join(pkgRoot, '.git'))) {
+    console.error(`${pkgRoot} — не git-клон, оновлюй тим самим способом, яким встановлював.`);
+    process.exit(1);
+  }
+  const run = (cmd: string, args: string[]) => {
+    console.log(`$ ${cmd} ${args.join(' ')}`);
+    execFileSync(cmd, args, { cwd: pkgRoot, stdio: 'inherit' });
+  };
+  run('git', ['pull', '--ff-only']);
+  run('corepack', ['pnpm', 'install', '--frozen-lockfile']);
+  run('corepack', ['pnpm', 'build']);
+  const { file } = serviceFiles();
+  if (existsSync(file)) {
+    try {
+      if (platform === 'darwin') execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid?.() ?? 501}/dev.vatra`], { stdio: 'inherit' });
+      else execFileSync('systemctl', ['--user', 'restart', 'vatra.service'], { stdio: 'inherit' });
+      console.log('Сервіс перезапущено.');
+    } catch {
+      console.log('Перезапусти сервер вручну, щоб підхопити нову версію.');
+    }
+  } else {
+    console.log('Готово. Перезапусти `vatra start`, якщо сервер зараз працює.');
+  }
+}
+
+const HELP = `Ватра (vatra) ${version} — паралельні агенти Claude Code в git worktrees
+
+Використання: vatra <команда>
+
+  start [--open]       запустити сервер (UI на ${'http://localhost:4317'}); --open відкриє браузер
+  open                 відкрити UI в браузері
+  doctor               перевірити git, tmux, claude, gh і нативні модулі
+  update               git pull + install + build (і перезапуск сервісу)
+  install-service      автозапуск у фоні (launchd / systemd --user)
+  uninstall-service    прибрати автозапуск
+  url                  надрукувати адресу UI
+  version              версія
+`;
+
 const [cmd = 'start', ...rest] = process.argv.slice(2);
+const [major] = process.versions.node.split('.').map(Number);
+if (major < 22) {
+  console.error(`Потрібен Node.js 22+, зараз ${process.version}.`);
+  process.exit(1);
+}
 switch (cmd) {
   case 'start':
-    await start(rest.includes('--dev'));
+    await start(rest.includes('--dev'), rest.includes('--open'));
+    break;
+  case 'open':
+    openBrowser(serverUrl());
     break;
   case 'doctor':
     await doctor();
+    break;
+  case 'update':
+    update();
     break;
   case 'install-service':
     installService();
@@ -299,13 +371,20 @@ switch (cmd) {
   case 'uninstall-service':
     uninstallService();
     break;
-  case 'url': {
-    const paths = getPaths();
-    const cfg = loadConfig(paths);
-    console.log(`http://localhost:${cfg.port}`);
+  case 'url':
+    console.log(serverUrl());
     break;
-  }
+  case 'version':
+  case '--version':
+  case '-v':
+    console.log(version);
+    break;
+  case 'help':
+  case '--help':
+  case '-h':
+    console.log(HELP);
+    break;
   default:
-    console.log(`Usage: vatra [start [--dev] | doctor | install-service | uninstall-service | url]`);
-    process.exit(cmd === 'help' || cmd === '--help' ? 0 : 1);
+    console.log(HELP);
+    process.exit(1);
 }

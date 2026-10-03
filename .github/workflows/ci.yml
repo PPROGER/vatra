@@ -12,13 +12,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+      - name: Enable pnpm (corepack)
+        run: corepack enable
       - name: Install tmux
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then brew install tmux; else sudo apt-get update && sudo apt-get install -y tmux; fi
@@ -26,3 +24,21 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test
+
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update && sudo apt-get install -y tmux shellcheck
+      - run: shellcheck install.sh
+      - name: Install from this checkout
+        run: |
+          git checkout -B ci-install
+          VATRA_REPO="file://$PWD" VATRA_BIN_DIR="$RUNNER_TEMP/bin" bash install.sh --dir "$RUNNER_TEMP/vatra" --branch ci-install --no-deps
+          "$RUNNER_TEMP/bin/vatra" version
+          "$RUNNER_TEMP/bin/vatra" doctor || true
