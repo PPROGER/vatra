@@ -76,6 +76,7 @@ Manual install from a clone: `corepack pnpm install && corepack pnpm build && no
 5. **Finish the task.** The project setting picks which button is the main one:
    - **Create PR**: pushes the agent branch and opens a PR with `gh`. Without `gh`, it opens GitHub's "new pull request" page instead. Later pushes update the same PR. Once the PR is merged on GitHub, Vatra stops the agent and cleans up.
    - **Merge ▾**: merge or squash into the base branch, optionally followed by `git push`. Your current checkout is never switched; a temporary worktree is used when needed. On a conflict the merge is aborted and the agent is asked to rebase.
+   - **Finish**: for when you already handled it yourself (e.g. the agent pushed from the chat). It stops the agent, removes the worktree and moves the chat to the archive. The branch is deleted locally only if it's already on origin or merged into the base. Uncommitted changes need a confirmation.
    - **Discard**: stops the agent and removes its worktree and branch.
 
 Agents live in tmux sessions (`tmux -L vatra ls`), so restarting the server doesn't kill them. If an agent renames its branch (e.g. because your CLAUDE.md asks for `feat/...` names), Vatra follows it. Vatra only ever deletes branches the task itself created.

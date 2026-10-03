@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Project, Task } from '../../../server/shared/types';
-import { OPEN_STATUSES } from '../../../server/shared/types';
+import { CLOSED_STATUSES, OPEN_STATUSES } from '../../../server/shared/types';
 import { api } from '../api';
 import { DiffView } from './DiffView';
 import { Terminal } from './Terminal';
@@ -68,6 +68,26 @@ export function TaskView({
     { label: 'Злити локально', hint: `git merge --no-ff, без push`, onClick: () => merge('merge') },
     { label: 'Squash локально', hint: 'один коміт, без push', onClick: () => merge('squash') },
   ];
+
+  const finish = async () => {
+    if (!confirm(`Завершити «${task.title}»?\n\nАгента буде зупинено, worktree прибрано, чат піде в архів (історія лишиться).\nГілку ${task.branch} буде збережено, якщо її ще немає на origin чи в ${task.baseBranch}.`)) return;
+    setBusy('finish');
+    try {
+      let r;
+      try {
+        r = await api.finish(task.id);
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (!/незакомічені/.test(msg) || !confirm(`${msg}\n\nВсе одно завершити?`)) throw e;
+        r = await api.finish(task.id, true);
+      }
+      toast('success', 'Задачу завершено', r.message.replace(/^Задачу завершено\.\s*/, ''));
+    } catch (e) {
+      toast('error', 'Не вдалося завершити', (e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const discard = () => {
     if (!confirm(`Відкинути «${task.title}»? Worktree і гілку ${task.branch} буде видалено без можливості відновлення.`)) return;
@@ -181,6 +201,11 @@ export function TaskView({
               items={mergeItems}
             />
           )}
+          {open && (
+            <Button busy={busy === 'finish'} onClick={finish} title="Ти вже все зробив сам (напр. агент запушив із чату): зупинити агента, прибрати worktree, чат — в архів">
+              Завершити
+            </Button>
+          )}
           {(open || task.status === 'creating') && (
             <Button variant="danger" busy={busy === 'discard'} onClick={discard}>
               Відкинути
@@ -241,7 +266,7 @@ export function TaskView({
           )}
         </div>
         <div className={cx('min-w-0 min-h-0 h-full', showDiff ? 'flex-1' : 'hidden')}>
-          {task.status === 'merged' || task.status === 'discarded' ? (
+          {CLOSED_STATUSES.includes(task.status) ? (
             <div className="h-full grid place-items-center text-muted">Worktree прибрано — дифу більше немає.</div>
           ) : (
             <DiffView taskId={task.id} refreshKey={diffTick} enabled={showDiff && !!task.baseCommit} />
@@ -295,6 +320,7 @@ function NotRunning({ task, onStart, busy, canStart }: { task: Task; onStart: ()
     error: 'Агент не запущений.',
     merged: `Злито${task.mergedAt ? ` ${timeAgo(task.mergedAt)} тому` : ''}. Worktree і гілку прибрано.`,
     discarded: 'Задачу відкинуто.',
+    done: 'Задачу завершено вручну, чат в архіві. Worktree прибрано.',
     running: 'Підключаюсь…',
     idle: 'Підключаюсь…',
   };

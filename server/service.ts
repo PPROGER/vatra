@@ -14,7 +14,7 @@ import type { TerminalHub } from './pty.js';
 import type { ChatState, DiffMode, DiffResult, Project, ServerEvent, Session, SlashCommand, Task, TaskStatus } from './shared/types.js';
 import { describeTool, type ChatHub } from './transcript.js';
 import { listSlashCommands } from './commands.js';
-import { OPEN_STATUSES } from './shared/types.js';
+import { CLOSED_STATUSES, OPEN_STATUSES } from './shared/types.js';
 import { slugify, uniqueSlug } from './slug.js';
 import { shQuote, Tmux } from './tmux.js';
 import type { DiffWatcher } from './watcher.js';
@@ -850,9 +850,60 @@ export class TaskService {
     });
   }
 
+  /**
+   * Closes a task you finished yourself (e.g. the agent pushed from the chat):
+   * stops the agent, removes the worktree, archives the chat. The branch is kept
+   * unless it is already on origin or merged into the base, so no work is lost.
+   */
+  async finish(taskId: number, opts: { force?: boolean } = {}): Promise<{ task: Task; message: string }> {
+    const t = await this.syncBranch(taskId);
+    if (!OPEN_STATUSES.includes(t.status) || t.status === 'creating') throw new UserError('Задача вже закрита', 409);
+    const project = this.getProject(t.projectId);
+    const repo = project.repoPath;
+    const hasWt = existsSync(t.worktreePath);
+
+    if (hasWt && !opts.force) {
+      const dirty = await git.statusPorcelain(t.worktreePath);
+      if (dirty.length) {
+        throw new UserError(`У worktree є незакомічені зміни (${dirty.length} файлів) — вони пропадуть. Закоміть їх через агента або підтверди завершення.`, 409);
+      }
+    }
+
+    return this.withLock(repo, async () => {
+      // what happens to the branch: delete only if nothing would be lost
+      await git.run(repo, ['fetch', '--quiet', 'origin', t.branch], { okCodes: [0, 1, 128], timeout: 30_000 }).catch(() => null);
+      const exists = await git.branchExists(repo, t.branch);
+      let keep = exists;
+      let note = '';
+      if (exists) {
+        const sha = await git.revParse(repo, t.branch);
+        const remote = await git.remoteBranchSha(repo, t.branch);
+        const merged = await git.isAncestor(repo, sha, t.baseBranch);
+        const owned = await this.ownsBranch(repo, t);
+        const ahead = await git.aheadCount(repo, t.baseBranch, t.branch).catch(() => 1);
+        if ((remote === sha || merged) && owned) keep = false;
+        if (keep) note = `Гілку ${t.branch} залишено${remote ? ' (на origin інша версія)' : ' (її немає на origin)'}.`;
+        else if (ahead === 0) note = `Нових комітів у ${t.branch} не було — гілку прибрано.`;
+        else note = `Гілка ${t.branch} уже ${remote === sha ? 'на origin' : `у ${t.baseBranch}`} — локальну копію прибрано.`;
+      }
+
+      await this.stopAgent(taskId, { keepStatus: true });
+      await this.d.watcher.unwatch(taskId);
+      this.d.chat.drop(taskId);
+      this.fileCache.delete(taskId);
+      if (hasWt) await git.removeWorktree(repo, t.worktreePath);
+      if (exists && !keep) await git.deleteBranch(repo, t.branch, true).catch((e) => this.log(`[task ${taskId}] branch delete: ${e.message}`));
+      setTimeout(() => void this.dequeue(), 0);
+
+      const task = this.update(taskId, { status: 'done', statusReason: note || null, mergedAt: now() });
+      this.log(`[task ${taskId}] finished by hand. ${note}`);
+      return { task, message: `Задачу завершено. ${note}`.trim() };
+    });
+  }
+
   async discard(taskId: number): Promise<Task> {
     const t = this.row(taskId);
-    if (t.status === 'merged' || t.status === 'discarded') throw new UserError('Задача вже закрита', 409);
+    if (CLOSED_STATUSES.includes(t.status)) throw new UserError('Задача вже закрита', 409);
     const project = this.getProject(t.projectId);
     await this.withLock(project.repoPath, () => this.cleanup(taskId, { forceBranchDelete: true }));
     return this.update(taskId, { status: 'discarded', statusReason: null });

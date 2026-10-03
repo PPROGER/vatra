@@ -43,6 +43,7 @@ export const STATUS_META: Record<TaskStatus, { label: string; dot: string; text:
   review: { label: 'ревʼю', dot: 'bg-violet-400', text: 'text-violet-300' },
   merged: { label: 'злито', dot: 'bg-emerald-700', text: 'text-emerald-500' },
   discarded: { label: 'відкинуто', dot: 'bg-zinc-600', text: 'text-zinc-500' },
+  done: { label: 'завершено', dot: 'bg-sky-700', text: 'text-sky-400' },
   error: { label: 'помилка', dot: 'bg-red-500', text: 'text-red-400' },
 };
 

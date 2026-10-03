@@ -2,6 +2,7 @@
 // transcript, messages are typed into the TUI, so every slash command works.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChatItem, ChatState, Task } from '../../../server/shared/types';
+import { CLOSED_STATUSES } from '../../../server/shared/types';
 import { api, onServerEvent } from '../api';
 import { AssistantText, splitAttachments, SystemLine, Thinking, ToolGroup, UserBubble, withAttachments, type Delivery } from './ChatItems';
 import { Composer, type Attachment, type ComposerHandle } from './Composer';
@@ -158,7 +159,7 @@ export function Chat({
   const key = (k: string) => api.keys(taskId, k).catch((e) => toast('error', 'Не вдалося', e.message));
 
   const live = task.status === 'running' || task.status === 'idle';
-  const closed = task.status === 'merged' || task.status === 'discarded';
+  const closed = CLOSED_STATUSES.includes(task.status);
   const ctx = state?.context;
   const pct = ctx ? Math.min(100, Math.round((ctx.usedTokens / ctx.windowTokens) * 100)) : 0;
 

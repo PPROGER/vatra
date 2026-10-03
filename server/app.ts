@@ -199,6 +199,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     return s.merge(idParam(req), strategy, { push: b.push === true });
   });
   app.post('/api/tasks/:id/discard', async (req) => s.discard(idParam(req)));
+  app.post('/api/tasks/:id/finish', async (req) => s.finish(idParam(req), { force: ((req.body ?? {}) as Body).force === true }));
   app.post('/api/tasks/:id/pr', async (req) => s.pr(idParam(req)));
   app.post('/api/tasks/:id/pr/check', async (req) => s.checkPr(idParam(req)));
   app.post('/api/tasks/:id/open', async (req) => {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Project, ServerInfo, Task } from '../../../server/shared/types';
+import { CLOSED_STATUSES } from '../../../server/shared/types';
 import { cx, StatusDot, timeAgo } from './ui';
 
 export function Sidebar({
@@ -75,7 +76,7 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto py-2">
         {projects.map((p) => {
           const pt = tasks.filter((t) => t.projectId === p.id);
-          const visible = pt.filter((t) => showClosed || (t.status !== 'merged' && t.status !== 'discarded'));
+          const visible = pt.filter((t) => showClosed || !CLOSED_STATUSES.includes(t.status));
           const hidden = pt.length - visible.length;
           return (
             <div key={p.id} className="mb-3">
@@ -113,7 +114,7 @@ export function Sidebar({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5 min-w-0">
-                      <span className={cx('truncate text-[13px]', t.status === 'merged' || t.status === 'discarded' ? 'text-faint' : 'text-fg')}>{t.title}</span>
+                      <span className={cx('truncate text-[13px]', CLOSED_STATUSES.includes(t.status) ? 'text-faint' : 'text-fg')}>{t.title}</span>
                       {t.prUrl && t.prState === 'OPEN' && <span className="shrink-0 text-[9.5px] font-mono rounded border border-emerald-800 text-emerald-400 px-1 leading-[14px]">PR</span>}
                     </span>
                     <span className="block truncate text-[11px] text-faint font-mono">
@@ -129,7 +130,7 @@ export function Sidebar({
               )}
               {hidden > 0 && !showClosed && (
                 <button className="block px-3 pt-0.5 text-[11px] text-faint hover:text-muted cursor-pointer" onClick={() => setShowClosed(true)}>
-                  + {hidden} закритих
+                  🗄 Архів · {hidden}
                 </button>
               )}
             </div>
@@ -137,7 +138,7 @@ export function Sidebar({
         })}
         {showClosed && (
           <button className="block px-3 text-[11px] text-faint hover:text-muted cursor-pointer" onClick={() => setShowClosed(false)}>
-            Сховати закриті
+            Сховати архів
           </button>
         )}
       </nav>

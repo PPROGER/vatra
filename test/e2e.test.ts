@@ -393,6 +393,37 @@ describe('e2e', () => {
     }
   }, 30000);
 
+  it('finish: agent pushed by itself → stop, drop worktree, keep chat, branch kept only if not on origin', async () => {
+    const origin = join(home, 'origin.git');
+    // pushed work: local branch removed, chat still readable
+    const a = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'pushed by agent', prompt: 'self-pushed' });
+    await waitFor(async () => existsSync(join(a.worktreePath, 'agent.txt')), 'agent output');
+    await waitStatus(a.id, 'idle');
+    sh(a.worktreePath, 'add', '-A');
+    sh(a.worktreePath, 'commit', '-qm', 'agent commit');
+    sh(a.worktreePath, 'push', '-q', 'origin', a.branch);
+    const done = await api('POST', `/api/tasks/${a.id}/finish`);
+    expect(done.task.status).toBe('done');
+    expect(existsSync(a.worktreePath)).toBe(false);
+    expect(tmuxHas(`vatra-${a.id}`)).toBe(false);
+    expect(sh(repo, 'branch', '--list', a.branch)).toBe('');
+    expect(execFileSync('git', ['--git-dir', origin, 'branch', '--list', a.branch], { encoding: 'utf8' })).toContain(a.branch);
+    const chat = await api('GET', `/api/tasks/${a.id}/chat`);
+    expect(chat.items.some((i: any) => i.kind === 'user' && i.text === 'self-pushed')).toBe(true);
+
+    // unpushed commits: branch is kept; uncommitted changes need force
+    const b = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'not pushed', prompt: 'local-only' });
+    await waitFor(async () => existsSync(join(b.worktreePath, 'agent.txt')), 'agent output');
+    await waitStatus(b.id, 'idle');
+    await expect(api('POST', `/api/tasks/${b.id}/finish`)).rejects.toThrow(/незакомічені/);
+    sh(b.worktreePath, 'add', '-A');
+    sh(b.worktreePath, 'commit', '-qm', 'local commit');
+    const kept = await api('POST', `/api/tasks/${b.id}/finish`);
+    expect(kept.task.status).toBe('done');
+    expect(sh(repo, 'branch', '--list', b.branch)).toContain(b.branch);
+    sh(repo, 'branch', '-D', b.branch);
+  }, 60000);
+
   it('folder picking helpers', async () => {
     const list = await api('GET', `/api/fs/list?path=${encodeURIComponent(home)}`);
     expect(list.entries.find((e: any) => e.name === 'repo').isGit).toBe(true);

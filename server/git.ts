@@ -348,6 +348,12 @@ export async function push(wt: string, branch: string): Promise<string> {
   return (r.stdout + r.stderr).trim();
 }
 
+/** Remote-tracking ref of a branch on origin after `git fetch`, if it exists. */
+export async function remoteBranchSha(dir: string, branch: string): Promise<string | null> {
+  const r = await run(dir, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}^{commit}`], { okCodes: [0, 1, 128] });
+  return r.code === 0 ? r.stdout.trim() : null;
+}
+
 /** Plain (non-force) push of a branch to origin. */
 export async function pushBranch(dir: string, branch: string): Promise<RunResult> {
   return run(dir, ['push', 'origin', `refs/heads/${branch}:refs/heads/${branch}`], { timeout: 120_000, okCodes: [0, 1, 128] });

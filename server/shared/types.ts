@@ -8,12 +8,17 @@ export const TASK_STATUSES = [
   'review',
   'merged',
   'discarded',
+  /** Finished by hand (e.g. you pushed from the chat): agent stopped, worktree removed, chat archived. */
+  'done',
   'error',
 ] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 /** Statuses in which the task still owns a worktree and a branch. */
 export const OPEN_STATUSES: readonly TaskStatus[] = ['creating', 'queued', 'running', 'idle', 'review', 'error'];
+
+/** Closed tasks: kept for their chat history (the archive). */
+export const CLOSED_STATUSES: readonly TaskStatus[] = ['merged', 'discarded', 'done'];
 
 export interface Project {
   id: number;
