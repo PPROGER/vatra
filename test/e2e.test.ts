@@ -31,6 +31,9 @@ async function startServer() {
       VATRA_NO_NOTIFY: '1',
       // assertions below check Ukrainian server messages
       LANG: 'uk_UA.UTF-8',
+      // CI runners may set LC_ALL=en_US.UTF-8, which wins over LANG
+      LC_ALL: '',
+      LC_MESSAGES: '',
       VATRA_GH: join(root, 'test/fake-gh.py'),
       FAKE_GH_STATE: join(home, 'gh-state'),
       ANTHROPIC_API_KEY: 'must-not-leak',
