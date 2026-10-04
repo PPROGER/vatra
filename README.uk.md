@@ -162,7 +162,7 @@ tmux -L vatra attach -t vatra-3   # вийти, не вбиваючи агент
 
 - **macOS, `posix_spawnp failed`**: у node-pty з pnpm буває, що `spawn-helper` втрачає біт виконання. `postinstall` це виправляє; вручну — `pnpm install` ще раз.
 - **Linux, inotify**: за великих репо підніми ліміт — `echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-inotify.conf && sudo sysctl --system`. `node_modules`, `.git`, `dist` тощо вже ігноруються.
-- **Статус у чаті не оновлюється / `vatra selftest` каже, що claude не запускає хуки Ватри**: Ватра реєструє хуки Claude Code (у `.claude/settings.local.json` worktree і через `--settings`). Якщо твій claude їх не запускає, Ватра читає його транскрипт і екран напряму — усе працює, лише статус може оновлюватись із затримкою в кілька секунд. `vatra selftest` у цьому випадку друкує діагностику.
+- **Статус у чаті не оновлюється / `vatra selftest` каже, що claude не запускає хуки Ватри**: Ватра реєструє хуки Claude Code (у `.claude/settings.local.json` worktree і через `--settings`). Claude запускає хуки лише в папках, яким довіряє, тож якщо ти вже довірив claude сам репозиторій, Ватра позначає довіреним і worktree кожної задачі (у `~/.claude.json`). Якщо твій claude їх усе одно не запускає, Ватра читає його транскрипт і екран напряму — усе працює, лише статус може оновлюватись із затримкою в кілька секунд. `vatra selftest` у цьому випадку друкує діагностику.
 - **claude не знайдено** при автозапуску: сервер шукає його в PATH, у login shell і в типових місцях; інакше задай `claudeBin` у `config.json`.
 - **Zed на Linux** може називатися `zeditor` — підтримуються обидва.
 

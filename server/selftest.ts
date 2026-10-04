@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isTrusted, setTrust } from './claudetrust.js';
 import { getPaths, loadConfig } from './config.js';
 import { tr } from './shared/i18n/index.js';
 
@@ -77,6 +78,7 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
     }
     const nested = ['IS_DEMO', 'CLAUDECODE'].filter((k) => process.env[k]);
     if (nested.length) line('env of this shell', `${nested.join(', ')} set — Vatra was probably started from inside Claude Code (the launcher unsets them for agents)`);
+    line('worktree trusted in ~/.claude.json', isTrusted(wt) ? 'yes' : 'NO — claude skips every hook in untrusted folders (accept the trust dialog, or run claude once in the repository and trust it)');
     const settingsFile = join(wt, '.claude', 'settings.local.json');
     let stopCmd: string | null = null;
     if (!existsSync(settingsFile)) line('hooks file', `MISSING ${settingsFile}`);
@@ -157,9 +159,17 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
   writeFileSync(join(repo, 'README.md'), '# vatra selftest\n');
   g('add', '.');
   g('commit', '-qm', 'init');
+  // our own throwaway repo: trust it like you'd trust a repo of yours (Vatra passes that on to the worktree)
+  let trustedRepo = false;
+  try {
+    trustedRepo = setTrust(repo, true);
+  } catch {
+    /* no ~/.claude.json yet */
+  }
 
   let projectId: number | null = null;
   let taskId: number | null = null;
+  let wtPath: string | null = null;
   try {
     const project = await api('POST', '/api/projects', { repo_path: repo, name: 'vatra-selftest', merge_mode: 'merge' });
     projectId = project.id;
@@ -171,6 +181,7 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
     });
     taskId = task.id;
     const wt: string = task.worktreePath;
+    wtPath = wt;
 
     const started = await waitFor(60_000, async () => {
       const t = (await api('GET', `/api/tasks/${task.id}`)).task;
@@ -283,6 +294,12 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
     if (!opts.keep && !failed) {
       if (taskId) await api('POST', `/api/tasks/${taskId}/discard`).catch(() => {});
       if (projectId) await api('DELETE', `/api/projects/${projectId}`).catch(() => {});
+      try {
+        if (trustedRepo) setTrust(repo, false);
+        if (wtPath) setTrust(wtPath, false);
+      } catch {
+        /* best effort */
+      }
       rmSync(dir, { recursive: true, force: true });
     } else if (opts.keep) {
       console.log(`\n  ${tr('(--keep) задачу й проєкт лишено: {repo}', { repo })}`);

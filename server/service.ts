@@ -14,6 +14,7 @@ import { envVar, notify, openIn, type OpenTarget } from './platform.js';
 import type { TerminalHub } from './pty.js';
 import type { ChatState, DiffMode, DiffResult, Project, ServerEvent, Session, SlashCommand, Task, TaskStatus } from './shared/types.js';
 import { describeTool, type ChatHub } from './transcript.js';
+import { inheritTrust } from './claudetrust.js';
 import { findTranscript, screenAsksPermission, turnState } from './turnstate.js';
 import { listSlashCommands } from './commands.js';
 import { CLOSED_STATUSES, OPEN_STATUSES, SETTLED_STATUSES } from './shared/types.js';
@@ -382,6 +383,11 @@ export class TaskService {
     }
     if (pane.exists) await this.d.tmux.kill(name);
 
+    try {
+      if (inheritTrust(project.repoPath, t.worktreePath)) this.log(`[task ${taskId}] claude already trusts ${project.repoPath} — trusting its worktree too`);
+    } catch (e) {
+      this.log(`[task ${taskId}] could not update ~/.claude.json: ${(e as Error).message}`);
+    }
     const flagSettings = writeHooks(t.worktreePath, this.d.config.port, taskId, t.hookToken, this.d.paths.runDir);
     const trace = hookTrace(this.d.paths.runDir, taskId);
     for (const f of [trace.ranFile, trace.logFile, trace.startedFile]) rmSync(f, { force: true });
