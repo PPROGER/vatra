@@ -35,6 +35,9 @@ export function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv 
   delete env.TMUX_PANE;
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.IS_DEMO;
+  delete env.CLAUDECODE;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
   // launchd/systemd start us without a locale; tmux then replaces non-ASCII with "_"
   const loc = env.LC_ALL || env.LC_CTYPE || env.LANG || '';
   if (!/utf-?8/i.test(loc)) {

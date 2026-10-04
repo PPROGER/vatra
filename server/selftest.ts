@@ -75,6 +75,8 @@ export async function selftest(opts: { keep?: boolean } = {}): Promise<number> {
     } catch (e) {
       line('claude', `error ${(e as Error).message.split('\n')[0]}`);
     }
+    const nested = ['IS_DEMO', 'CLAUDECODE'].filter((k) => process.env[k]);
+    if (nested.length) line('env of this shell', `${nested.join(', ')} set — Vatra was probably started from inside Claude Code (the launcher unsets them for agents)`);
     const settingsFile = join(wt, '.claude', 'settings.local.json');
     let stopCmd: string | null = null;
     if (!existsSync(settingsFile)) line('hooks file', `MISSING ${settingsFile}`);
