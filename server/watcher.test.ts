@@ -25,15 +25,17 @@ describe('worktree watcher', () => {
     const seen: number[] = [];
     const w = new DiffWatcher((id) => seen.push(id), 50);
     w.watch(7, root, null);
-    await sleep(300);
+    await sleep(800);
     expect(fds() - before).toBeLessThan(50); // 1000 files, a handful of descriptors
+    // FSEvents on macOS can still deliver the setup writes from just before watching started
+    seen.length = 0;
 
     writeFileSync(join(root, 'node_modules', 'pkg', 'a.js'), 'y');
-    await sleep(300);
+    await sleep(600);
     expect(seen).toEqual([]);
 
     writeFileSync(join(root, 'src', 'd3', 'f1.ts'), 'changed');
-    await sleep(400);
+    for (let i = 0; i < 30 && !seen.length; i++) await sleep(100);
     expect(seen).toContain(7);
     await w.unwatch(7);
     expect(w.watching(7)).toBe(false);
