@@ -170,7 +170,8 @@ export class TranscriptParser {
   }
 
   private userText(uuid: string, ts: string, raw: string, changed: Map<string, ChatItem>) {
-    const s = raw.trim();
+    // long pastes are stored wrapped: <pasted_content id="f322">…</pasted_content id="f322">
+    const s = raw.replace(/<pasted_content\b[^>]*>\n?([\s\S]*?)\n?<\/pasted_content\b[^>]*>/g, '$1').trim();
     if (!s || s.startsWith('Caveat: The messages below were generated')) return;
     const cmd = tag(s, 'command-name');
     if (cmd !== null) {

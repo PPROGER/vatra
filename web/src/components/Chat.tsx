@@ -104,13 +104,15 @@ export function Chat({
         if (p.status !== 'sent') return true;
         const head = norm(p.text).slice(0, 60);
         const isCmd = p.text.startsWith('/');
-        const seen = users.some((u) => {
-          if (Date.parse(u.ts) < Date.parse(p.ts) - 10_000) return false;
+        const after = users.filter((u) => Date.parse(u.ts) >= Date.parse(p.ts) - 10_000);
+        const seen = after.some((u) => {
           if (isCmd) return u.command === p.text.split(/\s/)[0];
-          return norm(u.text).startsWith(head);
+          const got = norm(u.text);
+          return got.startsWith(head) || got.includes(head) || (got.length >= 12 && head.startsWith(got.slice(0, 60)));
         });
-        // commands like /clear never appear in the new transcript
-        const stale = isCmd && Date.now() - Date.parse(p.ts) > 8000;
+        // commands like /clear never appear in the new transcript; and if claude stored the
+        // text differently, a newer message from the transcript still means it arrived
+        const stale = (isCmd && Date.now() - Date.parse(p.ts) > 8000) || (after.length > 0 && Date.now() - Date.parse(p.ts) > 20_000);
         return !seen && !stale;
       }),
     );
