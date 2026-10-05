@@ -1,17 +1,26 @@
 // Watches agent worktrees and emits a debounced "diff changed" signal.
-import chokidar, { type FSWatcher } from 'chokidar';
-import { join, sep } from 'node:path';
+//
+// One recursive fs.watch per worktree (FSEvents on macOS, a single inotify instance on
+// Linux) plus one for the worktree's git dir. Per-file watchers (what chokidar does without
+// fsevents) cost a file descriptor per file on macOS: a few big worktrees exhaust the
+// process limit and then every spawn fails with EBADF.
+import { watch, type FSWatcher } from 'node:fs';
+import { sep } from 'node:path';
 
-const IGNORED_DIRS = new Set(['node_modules', '.git', '.next', '.turbo', '.cache', 'dist', 'build', 'coverage', '.venv', '__pycache__', 'target']);
+const IGNORED_DIRS = new Set(['node_modules', '.git', '.next', '.turbo', '.cache', 'dist', 'build', 'coverage', '.venv', '__pycache__', 'target', 'vendor', '.nuxt', '.svelte-kit', '.pnpm-store', '.gradle', '.idea', 'tmp', 'log', 'logs']);
 
-function isIgnored(path: string, root: string): boolean {
-  if (!path.startsWith(root)) return false;
-  const rel = path.slice(root.length);
-  return rel.split(sep).some((part) => IGNORED_DIRS.has(part));
+/** True when a path (relative to the worktree) is inside a directory we don't care about. */
+export function isIgnoredPath(rel: string): boolean {
+  return rel.split(/[\\/]/).some((part) => IGNORED_DIRS.has(part));
+}
+
+interface Entry {
+  watchers: FSWatcher[];
+  timer?: NodeJS.Timeout;
 }
 
 export class DiffWatcher {
-  private watchers = new Map<number, { fs: FSWatcher; timer?: NodeJS.Timeout }>();
+  private entries = new Map<number, Entry>();
 
   constructor(
     private readonly onChange: (taskId: number) => void,
@@ -20,37 +29,45 @@ export class DiffWatcher {
 
   /** @param gitDir the worktree's own git dir; its HEAD/index change on commit/add. */
   watch(taskId: number, worktree: string, gitDir: string | null): void {
-    if (this.watchers.has(taskId)) return;
-    const paths = [worktree];
-    if (gitDir) paths.push(join(gitDir, 'HEAD'), join(gitDir, 'index'));
-    const fs = chokidar.watch(paths, {
-      ignoreInitial: true,
-      persistent: true,
-      ignored: (p: string) => isIgnored(p, worktree) && !(gitDir && p.startsWith(gitDir)),
-      awaitWriteFinish: false,
-    });
-    const entry: { fs: FSWatcher; timer?: NodeJS.Timeout } = { fs };
+    if (this.entries.has(taskId)) return;
+    const entry: Entry = { watchers: [] };
     const fire = () => {
       clearTimeout(entry.timer);
       entry.timer = setTimeout(() => this.onChange(taskId), this.debounceMs);
     };
-    fs.on('all', fire);
-    fs.on('error', (err) => {
-      // inotify limits on Linux: keep the server alive, the UI can still refresh manually
-      console.warn(`[watch] task ${taskId}: ${(err as Error).message}`);
-    });
-    this.watchers.set(taskId, entry);
+    const add = (path: string, recursive: boolean, filter?: (name: string) => boolean) => {
+      try {
+        const w = watch(path, { recursive, persistent: false }, (_ev, name) => {
+          const n = name ? String(name) : '';
+          if (!filter || !n || filter(n)) fire();
+        });
+        w.on('error', (err) => console.warn(`[watch] task ${taskId}: ${err.message}`));
+        entry.watchers.push(w);
+        return true;
+      } catch (err) {
+        console.warn(`[watch] task ${taskId}: ${(err as Error).message}`);
+        return false;
+      }
+    };
+    // fall back to watching only the top level where recursive watching isn't available
+    if (!add(worktree, true, (n) => !isIgnoredPath(n))) add(worktree, false, (n) => !isIgnoredPath(n));
+    if (gitDir && !gitDir.startsWith(worktree + sep)) add(gitDir, false, (n) => n === 'HEAD' || n === 'index');
+    this.entries.set(taskId, entry);
+  }
+
+  watching(taskId: number): boolean {
+    return this.entries.has(taskId);
   }
 
   async unwatch(taskId: number): Promise<void> {
-    const w = this.watchers.get(taskId);
-    if (!w) return;
-    clearTimeout(w.timer);
-    this.watchers.delete(taskId);
-    await w.fs.close();
+    const e = this.entries.get(taskId);
+    if (!e) return;
+    clearTimeout(e.timer);
+    this.entries.delete(taskId);
+    for (const w of e.watchers) w.close();
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all([...this.watchers.keys()].map((id) => this.unwatch(id)));
+    await Promise.all([...this.entries.keys()].map((id) => this.unwatch(id)));
   }
 }

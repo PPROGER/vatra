@@ -463,6 +463,7 @@ export class TaskService {
       this.d.db.update(sessions).set({ endedAt: now(), exitCode }).where(eq(sessions.id, last.id)).run();
     }
     this.d.hub.close(taskId, 'agent exited');
+    await this.d.watcher.unwatch(taskId); // nothing changes the worktree now; the diff view reloads on open
     this.d.chat.setMeta(taskId, { permission: null, activity: null });
     await this.d.tmux.kill(Tmux.sessionName(taskId));
     const t = this.row(taskId);
@@ -501,6 +502,7 @@ export class TaskService {
   private async stopAgentInner(taskId: number, opts: { keepStatus: boolean }) {
     const name = Tmux.sessionName(taskId);
     this.d.hub.close(taskId, 'agent stopped');
+    await this.d.watcher.unwatch(taskId);
     const p = await this.d.tmux.pane(name);
     await this.d.tmux.clearPaneDied(name);
     await this.d.tmux.stop(name);
@@ -1320,10 +1322,10 @@ export class TaskService {
         const died = `${curlPost(hookUrl(this.d.config.port, t.id, t.hookToken, 'PaneDied'), '{}')} >/dev/null 2>&1 || true`;
         await this.d.tmux.onPaneDied(name, died).catch(() => {});
         this.log(`[reconcile] task ${t.id}: re-attached to ${name}`);
+        await this.watch(t.id);
       } else if (LIVE.includes(t.status) || pane.exists) {
         await this.finalizeSession(t.id, pane.exitCode);
       }
-      await this.watch(t.id);
       await this.syncBranch(t.id).catch(() => {});
       this.chatState(t.id); // start following the transcript, if known
     }
