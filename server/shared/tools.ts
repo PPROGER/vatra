@@ -26,6 +26,11 @@ export function describeTool(name: string, input: Record<string, unknown> | unde
       return tr('Субагент: {description}', { description: s('description') });
     case 'TodoWrite':
       return tr('Оновлює список задач');
+    case 'AskUserQuestion': {
+      const qs = Array.isArray(i.questions) ? (i.questions as { question?: unknown }[]) : [];
+      const first = typeof qs[0]?.question === 'string' ? (qs[0].question as string) : '';
+      return tr('Питання: {q}', { q: first.slice(0, 160) + (qs.length > 1 ? ` (+${qs.length - 1})` : '') });
+    }
     default:
       return name;
   }

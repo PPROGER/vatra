@@ -1,4 +1,4 @@
-import type { ChatState, DiffMode, DiffResult, Project, ServerEvent, ServerInfo, Session, SlashCommand, Task } from '../../server/shared/types';
+import type { ChatState, DiffMode, DiffResult, Project, QuestionAnswer, ServerEvent, ServerInfo, Session, SlashCommand, Task } from '../../server/shared/types';
 
 export interface DirListing {
   path: string;
@@ -79,6 +79,7 @@ export const api = {
   message: (id: number, text: string, attachments: string[] = []) =>
     req<{ delivered: 'typed' | 'relaunch' }>('POST', `/api/tasks/${id}/message`, { text, attachments }),
   keys: (id: number, key: string) => req<{ ok: true }>('POST', `/api/tasks/${id}/keys`, { key }),
+  answer: (id: number, toolId: string, answers: QuestionAnswer[]) => req<{ ok: true }>('POST', `/api/tasks/${id}/answer`, { toolId, answers }),
   /** Endpoints the composer uses, for an existing task or for a new-task draft in a project. */
   composer: (scope: ComposerScope) => {
     const base = scope.kind === 'task' ? `/api/tasks/${scope.id}` : `/api/projects/${scope.id}`;

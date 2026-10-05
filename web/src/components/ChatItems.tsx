@@ -2,11 +2,11 @@
 import { memo, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatItem } from '../../../server/shared/types';
+import type { AgentQuestion, ChatItem, QuestionAnswer } from '../../../server/shared/types';
 import { describeTool } from '../../../server/shared/tools';
 import { api } from '../api';
 import { t } from '../i18n';
-import { cx } from './ui';
+import { Button, cx } from './ui';
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
 
@@ -255,6 +255,110 @@ export function ToolGroup({ items, root }: { items: ToolItem[]; root?: string })
       {items.map((t) => (
         <ToolRow key={t.id} item={t} root={root} />
       ))}
+    </div>
+  );
+}
+
+/** "Q"="A" pairs from the AskUserQuestion tool result. */
+function parseAnswers(result: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!result) return out;
+  const re = /"((?:[^"\\]|\\.)*)"="((?:[^"\\]|\\.)*)"/g;
+  for (const m of result.matchAll(re)) out.set(m[1].replace(/\\"/g, '"'), m[2].replace(/\\"/g, '"'));
+  return out;
+}
+
+/** claude's AskUserQuestion: answer it right in the chat (Vatra drives the TUI dialog). */
+export function QuestionCard({ item, live, onAnswer }: { item: ToolItem; live: boolean; onAnswer: (answers: QuestionAnswer[]) => Promise<boolean> }) {
+  const questions = (Array.isArray(item.input.questions) ? item.input.questions : []) as AgentQuestion[];
+  const [answers, setAnswers] = useState<QuestionAnswer[]>(() => questions.map(() => ({ selected: [], other: '' })));
+  const [busy, setBusy] = useState(false);
+  const answered = parseAnswers(item.result);
+  const open = !item.done && live;
+
+  const submit = async (next: QuestionAnswer[]) => {
+    setBusy(true);
+    const ok = await onAnswer(next.map((a) => ({ selected: a.selected, other: a.other?.trim() || undefined })));
+    if (!ok) setBusy(false);
+  };
+  const ready = answers.every((a, i) => a.selected.length > 0 || (!questions[i]?.multiSelect && !!a.other?.trim()));
+  const pick = (qi: number, oi: number) => {
+    const q = questions[qi];
+    const next = answers.map((a, i) => {
+      if (i !== qi) return a;
+      if (q.multiSelect) return { ...a, selected: a.selected.includes(oi) ? a.selected.filter((x) => x !== oi) : [...a.selected, oi].sort() };
+      return { selected: [oi], other: '' };
+    });
+    setAnswers(next);
+    // one single-choice question: a click is the answer
+    if (questions.length === 1 && !q.multiSelect) void submit(next);
+  };
+
+  return (
+    <div className={cx('max-w-[92%] rounded-xl border px-4 py-3', open ? 'border-accent/60 bg-accent/5' : 'border-line bg-panel/60')}>
+      <div className="text-[12px] font-medium mb-2 text-accent">{open ? t('Агент питає') : t('Питання агента')}</div>
+      <div className="space-y-3">
+        {questions.map((q, qi) => {
+          const a = answers[qi];
+          const given = answered.get(q.question);
+          return (
+            <div key={qi}>
+              <div className="text-[13px] text-fg mb-1.5">
+                {q.header && <span className="mr-1.5 text-[11px] uppercase tracking-wide text-faint">{q.header}</span>}
+                {q.question}
+                {q.multiSelect && <span className="ml-1.5 text-[11.5px] text-faint">{t('(кілька варіантів)')}</span>}
+              </div>
+              {item.done ? (
+                <div className={cx('text-[12.5px]', item.isError ? 'text-red-300' : 'text-emerald-300')}>{given ? `→ ${given}` : item.isError ? t('скасовано') : '✓'}</div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {q.options.map((o, oi) => {
+                    const on = a.selected.includes(oi);
+                    return (
+                      <button
+                        key={oi}
+                        disabled={!open || busy}
+                        onClick={() => pick(qi, oi)}
+                        className={cx(
+                          'text-left rounded-lg border px-3 py-1.5 transition-colors',
+                          on ? 'border-accent bg-accent/15' : 'border-line hover:border-muted',
+                          (!open || busy) ? 'opacity-60 cursor-default' : 'cursor-pointer',
+                        )}
+                      >
+                        <span className="text-[12.5px] text-fg">
+                          {q.multiSelect ? (on ? '☑ ' : '☐ ') : on ? '● ' : '○ '}
+                          {o.label}
+                        </span>
+                        {o.description && o.description !== o.label && <span className="block text-[11.5px] text-muted">{o.description}</span>}
+                      </button>
+                    );
+                  })}
+                  {!q.multiSelect && open && (
+                    <input
+                      className="rounded-lg border border-line bg-bg px-3 py-1.5 text-[12.5px] outline-none focus:border-accent"
+                      placeholder={t('Своя відповідь…')}
+                      value={a.other ?? ''}
+                      disabled={busy}
+                      onChange={(e) => setAnswers(answers.map((x, i) => (i === qi ? { selected: [], other: e.target.value } : x)))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && ready && !busy) void submit(answers);
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {open && !(questions.length === 1 && !questions[0]?.multiSelect && !answers[0]?.other) && (
+        <div className="mt-3 flex items-center gap-2">
+          <Button variant="primary" disabled={!ready || busy} busy={busy} onClick={() => void submit(answers)}>
+            {t('Відповісти')}
+          </Button>
+        </div>
+      )}
+      {!item.done && !live && <div className="mt-2 text-[11.5px] text-faint">{t('Агент не запущений — відповісти не вийде.')}</div>}
     </div>
   );
 }

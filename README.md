@@ -71,6 +71,7 @@ Manual install from a clone: `corepack pnpm install && corepack pnpm build && no
    - every slash command works (`/compact`, `/clear`, `/review`, your own commands and skills), plus `@file` mentions, `!bash`, and attachments (paste screenshots, drag & drop);
    - context window usage;
    - permission prompts and the "trust this folder?" prompt get buttons right in the chat.
+   - questions the agent asks you (Claude Code's `AskUserQuestion`) show up as a card with the options, a free-text answer and multiple choice.
 
    A raw **Terminal** tab is always there for interactive menus.
 4. **Diff** tab: everything vs. the base commit, only commits, or only uncommitted changes. Updates live.

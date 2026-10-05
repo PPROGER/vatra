@@ -354,6 +354,32 @@ describe('e2e', () => {
     await api('POST', `/api/tasks/${t.id}/discard`);
   }, 120000);
 
+  it('AskUserQuestion: the question card answers claude\'s dialog (single, free text, multi)', async () => {
+    for (const [answers, expected] of [
+      [[{ selected: [1] }, { selected: [0, 2] }], 'Green | Cat, Fish'],
+      [[{ selected: [], other: 'Пурпурний' }, { selected: [1] }], 'Пурпурний | Dog'],
+    ] as const) {
+      const t = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'питання', prompt: 'ask-question будь ласка' });
+      const q = await waitFor(async () => {
+        const c = await api('GET', `/api/tasks/${t.id}/chat`);
+        return c.items.find((i: any) => i.kind === 'tool' && i.name === 'AskUserQuestion' && !i.done);
+      }, 'question in chat');
+      await waitStatus(t.id, 'idle'); // waiting for the answer
+      expect((await taskStatus(t.id)).lastMessage).toBeTruthy();
+      await expect(api('POST', `/api/tasks/${t.id}/answer`, { toolId: q.id, answers: [{ selected: [] }, { selected: [] }] })).rejects.toThrow(/один варіант/);
+      await api('POST', `/api/tasks/${t.id}/answer`, { toolId: q.id, answers });
+      await waitFor(async () => existsSync(join(t.worktreePath, 'answers.txt')), 'answers reached claude');
+      expect(readFileSync(join(t.worktreePath, 'answers.txt'), 'utf8').trim()).toBe(expected);
+      const done = await waitFor(async () => {
+        const c = await api('GET', `/api/tasks/${t.id}/chat`);
+        return c.items.find((i: any) => i.id === q.id && i.done);
+      }, 'question answered in chat');
+      expect(done.result).toContain(expected.split(' | ')[0]);
+      await waitStatus(t.id, 'idle');
+      await api('POST', `/api/tasks/${t.id}/discard`);
+    }
+  }, 60000);
+
   it('follows a branch the agent renamed, merges it and cleans up', async () => {
     const t = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'rename me', prompt: 'renamed-branch-work' });
     await waitStatus(t.id, 'idle');

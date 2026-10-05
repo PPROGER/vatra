@@ -1,6 +1,12 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 // Covers web/src/components: TaskView, Chat, ChatItems, Composer, Terminal.
 export const EN_WEB_CHAT: Record<string, string> = {
+  "Питання агента": "Agent's question",
+  "(кілька варіантів)": "(several choices)",
+  "скасовано": "cancelled",
+  "Своя відповідь…": "Your own answer…",
+  "Відповісти": "Answer",
+  "Агент не запущений — відповісти не вийде.": "The agent isn't running — the question can't be answered.",
   // TaskView
   'Не вдалося': 'Failed',
   'Злити {branch} у {base} і запушити {base} в origin?': 'Merge {branch} into {base} and push {base} to origin?',

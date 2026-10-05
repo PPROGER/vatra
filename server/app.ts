@@ -9,7 +9,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { WebSocket } from '@fastify/websocket';
 import type { TerminalHub } from './pty.js';
 import { TaskService, UserError } from './service.js';
-import type { DiffMode, ServerEvent, ServerInfo } from './shared/types.js';
+import type { DiffMode, QuestionAnswer, ServerEvent, ServerInfo } from './shared/types.js';
 import type { OpenTarget } from './platform.js';
 import type { MergeStrategy } from './git.js';
 
@@ -180,6 +180,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
   app.post('/api/tasks/:id/keys', async (req) => {
     await s.keys(idParam(req), str(((req.body ?? {}) as Body).key) ?? '');
+    return { ok: true };
+  });
+  // answer claude's AskUserQuestion dialog from the chat
+  app.post('/api/tasks/:id/answer', async (req) => {
+    const b = (req.body ?? {}) as Body;
+    await s.answerQuestion(idParam(req), str(b.toolId) ?? '', Array.isArray(b.answers) ? (b.answers as QuestionAnswer[]) : []);
     return { ok: true };
   });
   app.get('/api/tasks/:id/chat', async (req) => s.chatState(idParam(req)));

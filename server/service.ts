@@ -12,7 +12,7 @@ import * as git from './git.js';
 import { SETTINGS_REL, curlPost, hookTrace, hookUrl, writeHooks } from './hooks.js';
 import { envVar, notify, openIn, type OpenTarget } from './platform.js';
 import type { TerminalHub } from './pty.js';
-import type { ChatState, DiffMode, DiffResult, Project, ServerEvent, Session, SlashCommand, Task, TaskStatus } from './shared/types.js';
+import type { AgentQuestion, ChatState, DiffMode, QuestionAnswer, DiffResult, Project, ServerEvent, Session, SlashCommand, Task, TaskStatus } from './shared/types.js';
 import { describeTool, type ChatHub } from './transcript.js';
 import { inheritTrust } from './claudetrust.js';
 import { findTranscript, screenAsksPermission, turnState } from './turnstate.js';
@@ -572,6 +572,63 @@ export class TaskService {
     if (['allow', 'allow-always', 'deny', 'escape', 'interrupt'].includes(key)) this.d.chat.setMeta(taskId, { permission: null });
   }
 
+  /**
+   * Answers claude's AskUserQuestion dialog by driving its TUI: a digit picks an option
+   * (single choice moves on by itself), digits toggle options of a multi-choice question
+   * and Tab moves on, "Type something" takes free text + Enter; with more than one
+   * question (or any multi-choice) a review screen follows, where "1" submits.
+   */
+  private answering = new Set<string>();
+
+  /** claude is waiting in its AskUserQuestion dialog. */
+  hasOpenQuestion(taskId: number): boolean {
+    if (!this.d.chat.has(taskId)) return false;
+    return this.d.chat.state(taskId).items.some((i) => i.kind === 'tool' && i.name === 'AskUserQuestion' && !i.done);
+  }
+
+  async answerQuestion(taskId: number, toolId: string, answers: QuestionAnswer[]): Promise<void> {
+    const item = this.chatState(taskId).items.find((i) => i.kind === 'tool' && i.id === toolId);
+    if (!item || item.kind !== 'tool' || item.name !== 'AskUserQuestion') throw new UserError(tr('Питання не знайдено'), 404);
+    if (item.done) throw new UserError(tr('На це питання вже відповіли'), 409);
+    const questions = (Array.isArray(item.input.questions) ? item.input.questions : []) as AgentQuestion[];
+    if (!questions.length || answers.length !== questions.length) throw new UserError(tr('Дай відповідь на кожне питання'));
+    const name = Tmux.sessionName(taskId);
+    const p = await this.d.tmux.pane(name);
+    if (!p.exists || p.dead) throw new UserError(tr('Агент не запущений'), 409);
+
+    // validate everything before touching the dialog
+    const plan = questions.map((q, qi) => {
+      const a = answers[qi];
+      const n = Array.isArray(q.options) ? q.options.length : 0;
+      const picked = [...new Set((a?.selected ?? []).filter((k) => Number.isInteger(k) && k >= 0 && k < n))];
+      const other = (a?.other ?? '').replace(/[\r\n]+/g, ' ').trim();
+      if (q.multiSelect && !picked.length) throw new UserError(tr('Обери хоча б один варіант: {q}', { q: q.question }));
+      if (!q.multiSelect && !other && picked.length !== 1) throw new UserError(tr('Обери один варіант: {q}', { q: q.question }));
+      return { q, n, picked, other };
+    });
+    if (this.answering.has(`${taskId}:${toolId}`)) throw new UserError(tr('На це питання вже відповіли'), 409);
+    this.answering.add(`${taskId}:${toolId}`);
+    setTimeout(() => this.answering.delete(`${taskId}:${toolId}`), 30_000);
+    // status first: claude's next hooks can arrive while the keys are still being sent
+    this.update(taskId, { status: 'running', lastMessage: null });
+    this.d.chat.setMeta(taskId, { activity: tr('Думає…') });
+
+    const tm = this.d.tmux;
+    for (const { q, n, picked, other } of plan) {
+      if (q.multiSelect) {
+        await tm.sendKeys(name, picked.map((k) => String(k + 1)), 180);
+        await tm.sendKeys(name, ['Tab'], 250);
+      } else if (other) {
+        await tm.sendKeys(name, [String(n + 1)], 200);
+        await tm.typeLiteral(name, other);
+        await tm.sendKeys(name, ['Enter'], 250);
+      } else {
+        await tm.sendKeys(name, [String(picked[0] + 1)], 250);
+      }
+    }
+    if (questions.length > 1 || questions.some((q) => q.multiSelect)) await tm.sendKeys(name, ['1'], 100);
+  }
+
   // ------------------------------------------------------------- chat helpers
 
   chatState(taskId: number): ChatState {
@@ -768,6 +825,14 @@ export class TaskService {
         const tool = typeof payload.tool_name === 'string' ? payload.tool_name : 'tool';
         const desc = describeTool(tool, payload.tool_input as Record<string, unknown>);
         this.lastTool.set(taskId, desc);
+        if (tool === 'AskUserQuestion') {
+          // claude waits for an answer — the question card is in the chat
+          this.update(taskId, { status: 'idle', lastMessage: tr('Агент питає') });
+          chat.setMeta(taskId, { activity: null });
+          chat.poke(taskId);
+          this.alert(taskId, tr('Агент «{title}» питає', { title: t.title }), desc);
+          break;
+        }
         if (t.status !== 'running' || t.lastMessage) this.update(taskId, { status: 'running', lastMessage: null });
         chat.setMeta(taskId, { activity: desc });
         break;
@@ -854,6 +919,11 @@ export class TaskService {
     const t = this.row(taskId);
     if (!LIVE.includes(t.status)) return;
     const ts = turnState(file);
+    if (ts.state === 'running' && ts.tool?.name === 'AskUserQuestion') {
+      if (this.lastTool.get(taskId) !== describeTool(ts.tool.name, ts.tool.input) || t.status !== 'idle')
+        await this.applyEvent(taskId, 'PreToolUse', { tool_name: ts.tool.name, tool_input: ts.tool.input });
+      return;
+    }
     if (ts.state === 'running') {
       if (ts.quietMs > 1500 && !this.d.chat.hasPermission(taskId)) {
         const screen = await this.d.tmux.capture(Tmux.sessionName(taskId)).catch(() => '');
@@ -1310,7 +1380,7 @@ export class TaskService {
         continue;
       }
       if (Date.now() - since < minutes * 60_000) continue;
-      if (this.launching.has(t.id) || this.d.chat.hasPermission(t.id)) continue;
+      if (this.launching.has(t.id) || this.d.chat.hasPermission(t.id) || this.hasOpenQuestion(t.id)) continue;
       this.log(`[task ${t.id}] idle for ${minutes} min — putting the agent to sleep`);
       await this.stopAgent(t.id, { keepStatus: true });
       const fresh = this.row(t.id);

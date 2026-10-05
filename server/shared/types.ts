@@ -140,6 +140,20 @@ export type ChatItem =
     }
   | { kind: 'system'; id: string; ts: string; text: string; tone?: 'info' | 'error' | 'output' };
 
+/** One question of claude's AskUserQuestion tool (tool_use input.questions[]). */
+export interface AgentQuestion {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: { label: string; description?: string }[];
+}
+
+/** Answer to one question: indexes of chosen options, or free text ("Other"). */
+export interface QuestionAnswer {
+  selected: number[];
+  other?: string;
+}
+
 export interface ChatContext {
   model: string | null;
   usedTokens: number;

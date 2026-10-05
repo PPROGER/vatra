@@ -51,7 +51,76 @@ def hook(event, extra=None):
 
 MENU = "Do you want to proceed?\n > 1. Yes\n   2. Yes, and don't ask again\n   3. No"
 
+QUESTIONS = [
+    {"question": "Який колір?", "header": "Колір", "multiSelect": False,
+     "options": [{"label": "Red", "description": "Червоний"}, {"label": "Green", "description": "Зелений"}, {"label": "Blue", "description": "Синій"}]},
+    {"question": "Які тварини?", "header": "Pets", "multiSelect": True,
+     "options": [{"label": "Cat"}, {"label": "Dog"}, {"label": "Fish"}]},
+]
+
+def read_key():
+    return os.read(sys.stdin.fileno(), 1).decode(errors="replace")
+
+def ask_questions():
+    """Like the real AskUserQuestion dialog: a digit picks (single) / toggles (multi),
+    Tab moves on from a multi question, "Type something" + text + Enter, "1" submits."""
+    import termios, tty
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    tty.setcbreak(fd)
+    answers = []
+    try:
+        for q in QUESTIONS:
+            n = len(q["options"])
+            print(q["question"] + "  " + "  ".join(f"{i + 1}. {o['label']}" for i, o in enumerate(q["options"])) + f"  {n + 1}. Type something.", flush=True)
+            if q["multiSelect"]:
+                chosen = set()
+                while True:
+                    k = read_key()
+                    if k == "\t":
+                        break
+                    if k.isdigit() and 1 <= int(k) <= n:
+                        chosen ^= {int(k) - 1}
+                answers.append(", ".join(q["options"][i]["label"] for i in sorted(chosen)))
+            else:
+                k = read_key()
+                while not k.isdigit():
+                    k = read_key()
+                if int(k) == n + 1:
+                    buf = b""
+                    while True:
+                        c = os.read(fd, 1)
+                        if c in (b"\r", b"\n"):
+                            break
+                        buf += c
+                    answers.append(buf.decode("utf-8", errors="replace"))
+                else:
+                    answers.append(q["options"][int(k) - 1]["label"])
+        print("Review your answers  1. Submit answers  2. Cancel", flush=True)
+        while read_key() != "1":
+            pass
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    return answers
+
 def work(text):
+    if "ask-question" in text:
+        hook("UserPromptSubmit", {"prompt": text})
+        record({"type": "user", "message": {"role": "user", "content": text}})
+        tool_input = {"questions": QUESTIONS}
+        assistant([{"type": "tool_use", "id": "toolu_ask1", "name": "AskUserQuestion", "input": tool_input}])
+        hook("PreToolUse", {"tool_name": "AskUserQuestion", "tool_input": tool_input})
+        answers = ask_questions()
+        pairs = ", ".join(f'"{q["question"]}"="{a}"' for q, a in zip(QUESTIONS, answers))
+        record({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_ask1", "content": f"Your questions have been answered: {pairs}. You can now continue with these answers in mind."}]}})
+        hook("PostToolUse", {"tool_name": "AskUserQuestion", "tool_input": tool_input})
+        with open("answers.txt", "w") as f:
+            f.write(" | ".join(answers) + "\n")
+        assistant([{"type": "text", "text": "Відповіді: " + " | ".join(answers)}])
+        record({"type": "system", "subtype": "turn_duration", "durationMs": 1000})
+        hook("Stop")
+        return
     if "echo vatra-ok > hello.txt" in text:
         hook("UserPromptSubmit", {"prompt": text})
         record({"type": "user", "message": {"role": "user", "content": text}})

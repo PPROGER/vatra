@@ -1,5 +1,13 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_SERVER: Record<string, string> = {
+  "Питання не знайдено": "Question not found",
+  "На це питання вже відповіли": "This question has already been answered",
+  "Дай відповідь на кожне питання": "Answer every question",
+  "Обери хоча б один варіант: {q}": "Pick at least one option: {q}",
+  "Обери один варіант: {q}": "Pick one option: {q}",
+  "Агент питає": "The agent is asking you",
+  "Агент «{title}» питає": "Agent \"{title}\" asks",
+  "Питання: {q}": "Question: {q}",
   'Claude просить дозвіл': 'Claude asks for permission',
   "Claude вперше бачить цю папку (worktree задачі) і питає, чи довіряти її файлам.": "Claude is seeing this folder (the task's worktree) for the first time and asks whether to trust its files.",
   "Проєкт не знайдено": "Project not found",

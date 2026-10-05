@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChatItem, ChatState, Task } from '../../../server/shared/types';
 import { CLOSED_STATUSES } from '../../../server/shared/types';
 import { api, onServerEvent } from '../api';
-import { AssistantText, splitAttachments, SystemLine, Thinking, ToolGroup, UserBubble, withAttachments, type Delivery } from './ChatItems';
+import { AssistantText, QuestionCard, splitAttachments, SystemLine, Thinking, ToolGroup, UserBubble, withAttachments, type Delivery } from './ChatItems';
 import { Composer, type Attachment, type ComposerHandle } from './Composer';
 import { t } from '../i18n';
 import { Button, cx } from './ui';
@@ -168,7 +168,8 @@ export function Chat({
   const blocks: ({ type: 'item'; item: ChatItem } | { type: 'tools'; items: ToolItem[] })[] = [];
   for (const it of items) {
     const last = blocks[blocks.length - 1];
-    if (it.kind === 'tool' && last?.type === 'tools') last.items.push(it);
+    if (it.kind === 'tool' && it.name === 'AskUserQuestion') blocks.push({ type: 'item', item: it });
+    else if (it.kind === 'tool' && last?.type === 'tools') last.items.push(it);
     else if (it.kind === 'tool') blocks.push({ type: 'tools', items: [it] });
     else blocks.push({ type: 'item', item: it });
   }
@@ -273,6 +274,21 @@ export function Chat({
               <AssistantText key={b.item.id} text={b.item.text} />
             ) : b.item.kind === 'thinking' ? (
               <Thinking key={b.item.id} text={b.item.text} />
+            ) : b.item.kind === 'tool' ? (
+              <QuestionCard
+                key={b.item.id}
+                item={b.item}
+                live={live}
+                onAnswer={(answers) =>
+                  api
+                    .answer(taskId, b.item.id, answers)
+                    .then(() => true)
+                    .catch((e) => {
+                      toast('error', t('Не вдалося'), (e as Error).message);
+                      return false;
+                    })
+                }
+              />
             ) : b.item.kind === 'system' ? (
               <SystemLine key={b.item.id ?? i} text={b.item.text} tone={b.item.tone} />
             ) : null,

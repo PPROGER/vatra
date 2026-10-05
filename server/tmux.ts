@@ -183,11 +183,17 @@ export class Tmux {
   }
 
   /** Sends named keys (tmux key names: Enter, Escape, Up, Down, BTab, C-c, 1…). */
-  async sendKeys(name: string, keys: string[]): Promise<void> {
+  async sendKeys(name: string, keys: string[], delayMs = 60): Promise<void> {
     for (const k of keys) {
       await this.run(['send-keys', '-t', `=${name}:`, k]);
-      await sleep(60);
+      await sleep(delayMs);
     }
+  }
+
+  /** Types text as-is (no Enter). */
+  async typeLiteral(name: string, text: string): Promise<void> {
+    await this.run(['send-keys', '-t', `=${name}:`, '-l', text]);
+    await sleep(150 + Math.min(400, text.length * 2));
   }
 
   /** The visible screen of the pane as plain text. */
