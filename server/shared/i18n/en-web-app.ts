@@ -1,5 +1,7 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_WEB_APP: Record<string, string> = {
+  "Показати архів цього проєкту": "Show this project's archive",
+  "Показати ще {n}": "Show {n} more",
   // App.tsx
   'Ватра': 'Vatra',
   'Немає токена доступу': 'No access token',

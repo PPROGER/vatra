@@ -32,26 +32,81 @@ export function Sidebar({
   onSettings: () => void;
   onPalette: () => void;
 }) {
-  const [showClosed, setShowClosed] = useState(false);
+  // which projects have their archive expanded (remembered per browser)
+  const [openArchives, setOpenArchives] = useState<Set<number>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('vatra-open-archives') ?? '[]') as number[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const [archiveLimit, setArchiveLimit] = useState<Record<number, number>>({});
+  const toggleArchive = (id: number) =>
+    setOpenArchives((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem('vatra-open-archives', JSON.stringify([...next]));
+      } catch {
+        /* private mode */
+      }
+      return next;
+    });
   const live = tasks.filter((t) => t.status === 'running' || t.status === 'idle').length;
   const waiting = tasks.filter((t) => t.status === 'idle').length;
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
+
+  const renderTask = (t: Task) => (
+    <button
+      key={t.id}
+      onClick={() => onSelect(t.id)}
+      className={cx(
+        'w-full text-left flex items-start gap-2.5 px-3 py-1.5 mx-0 border-l-2 cursor-pointer',
+        selected === t.id ? 'bg-panel-2 border-accent' : 'border-transparent hover:bg-[#151920]',
+      )}
+    >
+      <span className="pt-[5px]">
+        <StatusDot status={t.status} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className={cx('truncate text-[13px]', CLOSED_STATUSES.includes(t.status) ? 'text-faint' : 'text-fg')}>{t.title}</span>
+          {t.prUrl && t.prState === 'OPEN' && (
+            <span className="shrink-0 text-[9.5px] font-mono rounded border border-emerald-800 text-emerald-400 px-1 leading-[14px]">PR</span>
+          )}
+        </span>
+        <span className="block truncate text-[11px] text-faint font-mono">
+          {t.status === 'idle' && t.lastMessage ? <span className="text-amber-300/80 font-sans">{t.lastMessage}</span> : `${t.slug} · ${timeAgo(t.createdAt)}`}
+        </span>
+      </span>
+    </button>
+  );
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex items-center gap-2 px-4 h-12 border-b border-line">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
-          <path d="M12 2.5c.6 3.2-1.4 4.9-2.9 6.6C7.6 10.8 6.5 12.6 6.5 15a5.5 5.5 0 0 0 11 0c0-2.1-.9-3.7-2-5 .1 1.6-.5 2.8-1.6 3.4.4-3.5-.6-7.6-1.9-10.9Z" fill="#f97316" />
+          <path
+            d="M12 2.5c.6 3.2-1.4 4.9-2.9 6.6C7.6 10.8 6.5 12.6 6.5 15a5.5 5.5 0 0 0 11 0c0-2.1-.9-3.7-2-5 .1 1.6-.5 2.8-1.6 3.4.4-3.5-.6-7.6-1.9-10.9Z"
+            fill="#f97316"
+          />
           <path d="M12 21a2.9 2.9 0 0 1-2.9-2.9c0-1.6 1.1-2.6 2-3.6.3 1 .9 1.6 1.7 1.9.2-.9.6-1.6 1.2-2.2.6.9 1 1.9 1 3A2.9 2.9 0 0 1 12 21Z" fill="#fde68a" />
         </svg>
         <span className="font-semibold tracking-tight">{t('Ватра')}</span>
         <span
-          className={cx('ml-auto text-[11px] font-mono px-1.5 h-5 inline-flex items-center rounded', live >= (info?.maxActive ?? 99) ? 'bg-amber-950/50 text-amber-300' : 'bg-panel-2 text-muted')}
+          className={cx(
+            'ml-auto text-[11px] font-mono px-1.5 h-5 inline-flex items-center rounded',
+            live >= (info?.maxActive ?? 99) ? 'bg-amber-950/50 text-amber-300' : 'bg-panel-2 text-muted',
+          )}
           title={t('Активні агенти / ліміт')}
         >
           {live}/{info?.maxActive ?? '–'}
         </span>
-        <span className={cx('size-2 rounded-full', connected ? 'bg-emerald-500' : 'bg-red-500 pulse-dot')} title={connected ? t('Підключено') : t('Немає звʼязку з сервером')} />
+        <span
+          className={cx('size-2 rounded-full', connected ? 'bg-emerald-500' : 'bg-red-500 pulse-dot')}
+          title={connected ? t('Підключено') : t('Немає звʼязку з сервером')}
+        />
       </div>
 
       {projects.length > 0 && (
@@ -64,7 +119,9 @@ export function Sidebar({
             }}
             className={cx(
               'w-full h-8 rounded-lg border text-[12.5px] font-medium cursor-pointer flex items-center justify-center gap-1.5',
-              drafting !== null && selected === null ? 'border-accent/60 bg-accent/10 text-fg' : 'border-line-2 text-muted hover:text-fg hover:border-accent/50',
+              drafting !== null && selected === null
+                ? 'border-accent/60 bg-accent/10 text-fg'
+                : 'border-line-2 text-muted hover:text-fg hover:border-accent/50',
             )}
           >
             <span className="text-accent text-[15px] leading-none">+</span> {t('Нова задача')}
@@ -81,16 +138,18 @@ export function Sidebar({
       )}
 
       {waiting > 0 && (
-        <div className="px-4 py-1.5 text-[11px] text-amber-300 bg-amber-950/20 border-b border-line">
-          {t('Агентів чекає на тебе: {n}', { n: waiting })}
-        </div>
+        <div className="px-4 py-1.5 text-[11px] text-amber-300 bg-amber-950/20 border-b border-line">{t('Агентів чекає на тебе: {n}', { n: waiting })}</div>
       )}
 
       <nav className="flex-1 overflow-y-auto py-2">
         {projects.map((p) => {
           const pt = tasks.filter((t) => t.projectId === p.id);
-          const visible = pt.filter((t) => showClosed || !CLOSED_STATUSES.includes(t.status));
-          const hidden = pt.length - visible.length;
+          const visible = pt.filter((t) => !CLOSED_STATUSES.includes(t.status));
+          const archived = pt.filter((t) => CLOSED_STATUSES.includes(t.status)).sort((a, b) => b.id - a.id);
+          // a selected archived task keeps its project's archive open
+          const archiveOpen = openArchives.has(p.id) || archived.some((t) => t.id === selected);
+          const limit = archiveLimit[p.id] ?? 15;
+          const shownArchive = archiveOpen ? archived.slice(0, Math.max(limit, archived.findIndex((t) => t.id === selected) + 1)) : [];
           return (
             <div key={p.id} className="mb-3">
               <div className="group flex items-center gap-1 px-3 h-7">
@@ -106,54 +165,57 @@ export function Sidebar({
                   ⚙
                 </button>
                 <button
-                  className={cx('px-1 text-[15px] leading-none cursor-pointer', drafting === p.id && selected === null ? 'text-accent' : 'text-muted hover:text-accent')}
+                  className={cx(
+                    'px-1 text-[15px] leading-none cursor-pointer',
+                    drafting === p.id && selected === null ? 'text-accent' : 'text-muted hover:text-accent',
+                  )}
                   onClick={() => onNewTask(p)}
                   title={t('Нова задача в цьому проєкті')}
                 >
                   +
                 </button>
               </div>
-              {visible.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => onSelect(t.id)}
-                  className={cx(
-                    'w-full text-left flex items-start gap-2.5 px-3 py-1.5 mx-0 border-l-2 cursor-pointer',
-                    selected === t.id ? 'bg-panel-2 border-accent' : 'border-transparent hover:bg-[#151920]',
-                  )}
-                >
-                  <span className="pt-[5px]">
-                    <StatusDot status={t.status} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <span className={cx('truncate text-[13px]', CLOSED_STATUSES.includes(t.status) ? 'text-faint' : 'text-fg')}>{t.title}</span>
-                      {t.prUrl && t.prState === 'OPEN' && <span className="shrink-0 text-[9.5px] font-mono rounded border border-emerald-800 text-emerald-400 px-1 leading-[14px]">PR</span>}
-                    </span>
-                    <span className="block truncate text-[11px] text-faint font-mono">
-                      {t.status === 'idle' && t.lastMessage ? <span className="text-amber-300/80 font-sans">{t.lastMessage}</span> : `${t.slug} · ${timeAgo(t.createdAt)}`}
-                    </span>
-                  </span>
-                </button>
-              ))}
+              {visible.map((t) => renderTask(t))}
               {visible.length === 0 && (
                 <button className="block px-3 py-1 text-[12px] text-faint hover:text-muted cursor-pointer" onClick={() => onNewTask(p)}>
                   {t('Немає відкритих задач — створити')}
                 </button>
               )}
-              {hidden > 0 && !showClosed && (
-                <button className="block px-3 pt-0.5 text-[11px] text-faint hover:text-muted cursor-pointer" onClick={() => setShowClosed(true)}>
-                  🗄 {t('Архів')} · {hidden}
-                </button>
+              {archived.length > 0 && (
+                <div className="mt-0.5">
+                  <button
+                    className="flex w-full items-center gap-1.5 px-3 h-6 text-[11px] text-faint hover:text-muted cursor-pointer"
+                    onClick={() => toggleArchive(p.id)}
+                    title={archiveOpen ? t('Сховати архів') : t('Показати архів цього проєкту')}
+                  >
+                    <span className={cx('inline-block w-2.5 transition-transform', archiveOpen && 'rotate-90')}>▸</span>
+                    🗄 {t('Архів')} · {archived.length}
+                  </button>
+                  {archiveOpen && (
+                    <div className="ml-3 border-l border-line">
+                      {shownArchive.map((t) => renderTask(t))}
+                      {archived.length > shownArchive.length && (
+                        <button
+                          className="block px-3 py-1 text-[11px] text-faint hover:text-muted cursor-pointer"
+                          onClick={() =>
+                            setArchiveLimit((l) => ({
+                              ...l,
+                              [p.id]: limit + 30,
+                            }))
+                          }
+                        >
+                          {t('Показати ще {n}', {
+                            n: Math.min(30, archived.length - shownArchive.length),
+                          })}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           );
         })}
-        {showClosed && (
-          <button className="block px-3 text-[11px] text-faint hover:text-muted cursor-pointer" onClick={() => setShowClosed(false)}>
-            {t('Сховати архів')}
-          </button>
-        )}
       </nav>
 
       <div className="border-t border-line p-3 space-y-2">
