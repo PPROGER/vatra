@@ -38,6 +38,7 @@ export function Chat({
 }) {
   const [state, setState] = useState<ChatState | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
+  const [reopening, setReopening] = useState(false);
   const [dragging, setDragging] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -359,6 +360,37 @@ export function Chat({
                 {t('Показати в терміналі')}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* archived: bring the task back */}
+      {closed && (
+        <div className="mx-auto w-full max-w-4xl px-5 pb-4">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel/60 px-4 py-2.5">
+            <span className="text-[12.5px] text-muted">
+              🗄 {t('Задача в архіві.')}{' '}
+              <span className="text-faint">{t('Можна повернути її: Ватра знову створить worktree, і агент продовжить ту саму розмову.')}</span>
+            </span>
+            <Button
+              variant="primary"
+              className="ml-auto"
+              busy={reopening}
+              disabled={reopening}
+              onClick={async () => {
+                setReopening(true);
+                try {
+                  const r = await api.reopen(taskId);
+                  toast('success', t('Задачу повернуто в роботу'), r.note);
+                } catch (e) {
+                  toast('error', t('Не вдалося повернути'), (e as Error).message);
+                } finally {
+                  setReopening(false);
+                }
+              }}
+            >
+              {t('Повернути в роботу')}
+            </Button>
           </div>
         </div>
       )}

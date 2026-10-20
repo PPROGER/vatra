@@ -1,5 +1,14 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_SERVER: Record<string, string> = {
+  "Задача не в архіві": "The task is not in the archive",
+  "Репозиторій проєкту не знайдено: {path}": "Project repository not found: {path}",
+  "Папка {path} уже існує і це не worktree задачі — прибери її й спробуй ще раз.": "The folder {path} already exists and isn't the task's worktree — remove it and try again.",
+  "Worktree ще був на місці.": "The worktree was still there.",
+  "Продовжуємо в гілці {branch}.": "Continuing on branch {branch}.",
+  "Гілку {branch} відновлено з origin.": "Branch {branch} restored from origin.",
+  "Зміни вже в {base} — нова гілка {branch} від свіжого {base}.": "The changes are already in {base} — new branch {branch} from the latest {base}.",
+  "Гілки {branch} вже немає — створено нову від {base}. Розмова з агентом збереглась, але старих змін у коді немає.": "Branch {branch} no longer exists — created a new one from {base}. The conversation with the agent is kept, but the old code changes are gone.",
+  "Гілка {branch} зараз відкрита в іншому місці (git checkout) — перемкни ту копію на іншу гілку.": "Branch {branch} is checked out somewhere else — switch that checkout to another branch.",
   "Питання не знайдено": "Question not found",
   "На це питання вже відповіли": "This question has already been answered",
   "Дай відповідь на кожне питання": "Answer every question",

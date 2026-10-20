@@ -164,6 +164,17 @@ export async function addWorktree(repo: string, path: string, branch: string, co
   await run(repo, ['worktree', 'add', '-b', branch, path, commit]);
 }
 
+/** Worktree on an existing local branch. */
+export async function addWorktreeForBranch(repo: string, path: string, branch: string): Promise<void> {
+  mkdirSync(dirname(path), { recursive: true });
+  await run(repo, ['worktree', 'add', path, branch]);
+}
+
+export async function mergeBase(repo: string, a: string, b: string): Promise<string | null> {
+  const r = await run(repo, ['merge-base', a, b], { okCodes: [0, 1, 128] });
+  return r.code === 0 ? r.stdout.trim() : null;
+}
+
 export async function removeWorktree(repo: string, path: string): Promise<void> {
   if (existsSync(path)) {
     await run(repo, ['worktree', 'remove', '--force', '--force', path], { okCodes: [0, 128] });

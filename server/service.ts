@@ -354,6 +354,8 @@ export class TaskService {
   private idleSince = new Map<number, number>();
   private baseAhead = new Map<number, { count: number; ref: string }>();
   private startsWithPrompt = new Set<number>();
+  /** Reopened tasks: their fresh worktree needs the setup script again. */
+  private needsSetup = new Set<number>();
   private lastTool = new Map<number, string>();
 
   private launching = new Set<number>();
@@ -425,7 +427,7 @@ export class TaskService {
         COLORTERM: 'truecolor',
         PATH: this.d.pathEnv ?? undefined,
       },
-      setupScript: isFirst ? project.setupScript : null,
+      setupScript: isFirst || this.needsSetup.delete(taskId) ? project.setupScript : null,
       // checks that the hook endpoint is reachable from the agent's environment (see `vatra selftest`)
       probe: [
         `touch ${shQuote(trace.startedFile)}`,
@@ -1107,6 +1109,83 @@ export class TaskService {
       this.log(`[task ${taskId}] finished by hand. ${note}`);
       return { task, note, message: tr('Задачу завершено. {note}', { note }).trim() };
     });
+  }
+
+  /**
+   * Brings an archived task back: re-creates its worktree at the same path (so
+   * `claude --resume` finds the conversation), on the task's branch if it still exists
+   * locally or on origin, otherwise on a fresh branch from the base. The agent starts with
+   * the next chat message.
+   */
+  async reopen(taskId: number): Promise<{ task: Task; note: string }> {
+    const t = this.row(taskId);
+    if (!CLOSED_STATUSES.includes(t.status)) throw new UserError(tr('Задача не в архіві'), 409);
+    const project = this.getProject(t.projectId);
+    const repo = project.repoPath;
+    if (!existsSync(repo)) throw new UserError(tr('Репозиторій проєкту не знайдено: {path}', { path: repo }), 410);
+
+    const note = await this.withLock(repo, async () => {
+      await git.prune(repo);
+      if (existsSync(t.worktreePath)) {
+        const known = (await git.listWorktrees(repo)).some((w) => w.path === t.worktreePath);
+        if (!known) throw new UserError(tr('Папка {path} уже існує і це не worktree задачі — прибери її й спробуй ще раз.', { path: t.worktreePath }), 409);
+        return tr('Worktree ще був на місці.');
+      }
+      await git.run(repo, ['fetch', '--quiet', 'origin'], { okCodes: [0, 1, 128], timeout: 60_000 }).catch(() => null);
+      const onOrigin = await git.refExists(repo, `refs/remotes/origin/${t.branch}`);
+      const baseRef = (await git.refExists(repo, `refs/remotes/origin/${t.baseBranch}`)) ? `origin/${t.baseBranch}` : t.baseBranch;
+      let text: string;
+      try {
+        if (await git.branchExists(repo, t.branch)) {
+          await git.addWorktreeForBranch(repo, t.worktreePath, t.branch);
+          text = tr('Продовжуємо в гілці {branch}.', { branch: t.branch });
+        } else if (onOrigin) {
+          await git.addWorktree(repo, t.worktreePath, t.branch, `origin/${t.branch}`);
+          text = tr('Гілку {branch} відновлено з origin.', { branch: t.branch });
+        } else {
+          await git.addWorktree(repo, t.worktreePath, t.branch, baseRef);
+          text =
+            t.status === 'merged'
+              ? tr('Зміни вже в {base} — нова гілка {branch} від свіжого {base}.', { base: t.baseBranch, branch: t.branch })
+              : tr('Гілки {branch} вже немає — створено нову від {base}. Розмова з агентом збереглась, але старих змін у коді немає.', { branch: t.branch, base: t.baseBranch });
+        }
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (/already (checked out|used by worktree)/i.test(msg)) throw new UserError(tr('Гілка {branch} зараз відкрита в іншому місці (git checkout) — перемкни ту копію на іншу гілку.', { branch: t.branch }), 409);
+        throw err;
+      }
+      // the diff is measured from where this branch left the base
+      const head = await git.revParse(t.worktreePath, 'HEAD');
+      const base = (await git.mergeBase(repo, head, baseRef)) ?? head;
+      this.update(taskId, { baseCommit: base });
+      return text;
+    });
+
+    // same preparation as a new task: env files, excludes; setup runs again with the next launch
+    const excludes = [SETTINGS_REL];
+    for (const f of project.envFiles) {
+      const src = join(repo, f);
+      const dst = join(t.worktreePath, f);
+      if (!existsSync(src) || !statSync(src).isFile() || existsSync(dst)) continue;
+      mkdirSync(dirname(dst), { recursive: true });
+      copyFileSync(src, dst);
+      excludes.push('/' + f);
+    }
+    await git.addExcludes(t.worktreePath, excludes);
+    this.needsSetup.add(taskId);
+
+    const merged = t.prState === 'MERGED' || t.prState === 'CLOSED';
+    const task = this.update(taskId, {
+      status: 'review',
+      statusReason: note,
+      mergedAt: null,
+      lastMessage: null,
+      port: this.allocatePort(),
+      ...(merged ? { prUrl: null, prState: null } : {}),
+    });
+    this.d.emit({ type: 'task', task });
+    this.log(`[task ${taskId}] reopened from the archive. ${note}`);
+    return { task, note };
   }
 
   async discard(taskId: number): Promise<Task> {

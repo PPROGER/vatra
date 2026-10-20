@@ -81,6 +81,8 @@ Manual install from a clone: `corepack pnpm install && corepack pnpm build && no
    - **Finish**: for when you already handled it yourself (e.g. the agent pushed from the chat). It stops the agent, removes the worktree and moves the chat to the archive. The branch is deleted locally only if it's already on origin or merged into the base. Uncommitted changes need a confirmation.
    - **Discard**: stops the agent and removes its worktree and branch.
 
+   Archived tasks can be brought back with **Reopen** in their chat: Vatra recreates the worktree at the same path (on the task's branch if it still exists locally or on origin, otherwise on a fresh branch from the base), and your next message resumes the same claude conversation.
+
 Agents live in tmux sessions (`tmux -L vatra ls`), so restarting the server doesn't kill them. If an agent renames its branch (e.g. because your CLAUDE.md asks for `feat/...` names), Vatra follows it. Vatra only ever deletes branches the task itself created.
 
 ## Using it from another device

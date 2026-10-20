@@ -1,6 +1,11 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 // Covers web/src/components: TaskView, Chat, ChatItems, Composer, Terminal.
 export const EN_WEB_CHAT: Record<string, string> = {
+  "Задача в архіві.": "This task is archived.",
+  "Можна повернути її: Ватра знову створить worktree, і агент продовжить ту саму розмову.": "You can bring it back: Vatra recreates the worktree and the agent continues the same conversation.",
+  "Задачу повернуто в роботу": "Task reopened",
+  "Не вдалося повернути": "Couldn't reopen",
+  "Повернути в роботу": "Reopen",
   "Питання агента": "Agent's question",
   "(кілька варіантів)": "(several choices)",
   "скасовано": "cancelled",

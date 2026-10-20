@@ -532,6 +532,47 @@ describe('e2e', () => {
     sh(repo, 'branch', '-D', b.branch);
   }, 60000);
 
+  it('reopen from the archive: worktree back on the same path and branch, the conversation resumes', async () => {
+    // pushed + finished: the local branch is gone, it comes back from origin
+    const a = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'reopen me', prompt: 'перший прохід' });
+    await waitFor(async () => existsSync(join(a.worktreePath, 'agent.txt')), 'agent output');
+    await waitStatus(a.id, 'idle');
+    sh(a.worktreePath, 'add', '-A');
+    sh(a.worktreePath, 'commit', '-qm', 'agent commit');
+    sh(a.worktreePath, 'push', '-q', 'origin', a.branch);
+    await api('POST', `/api/tasks/${a.id}/finish`);
+    expect(existsSync(a.worktreePath)).toBe(false);
+    await expect(api('POST', `/api/tasks/${a.id}/message`, { text: 'ще' })).rejects.toThrow();
+
+    const r = await api('POST', `/api/tasks/${a.id}/reopen`);
+    expect(r.task.status).toBe('review');
+    expect(r.note).toContain('origin');
+    expect(readFileSync(join(a.worktreePath, 'agent.txt'), 'utf8')).toContain('перший прохід');
+    expect(sh(a.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(a.branch);
+    await expect(api('POST', `/api/tasks/${a.id}/reopen`)).rejects.toThrow(/не в архіві/);
+    // the next message starts claude with --resume of the old session
+    await api('POST', `/api/tasks/${a.id}/message`, { text: 'другий прохід' });
+    await waitFor(async () => readFileSync(join(a.worktreePath, 'agent.txt'), 'utf8').includes('другий прохід'), 'agent resumed');
+    await waitStatus(a.id, 'idle');
+    const sessions = (await api('GET', `/api/tasks/${a.id}`)).sessions;
+    expect(sessions.length).toBe(2);
+    expect(sessions[0].claudeSessionId).toBe(sessions[1].claudeSessionId);
+    const diff = await api('GET', `/api/tasks/${a.id}/diff?mode=all`);
+    expect(JSON.stringify(diff)).toContain('agent.txt');
+    await api('POST', `/api/tasks/${a.id}/discard`);
+
+    // discarded: branch is gone everywhere, a fresh one starts from the base
+    const b = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'discarded then back', prompt: 'тимчасово' });
+    await waitStatus(b.id, 'idle');
+    await api('POST', `/api/tasks/${b.id}/discard`);
+    const rb = await api('POST', `/api/tasks/${b.id}/reopen`);
+    expect(rb.note).toContain('немає');
+    const file = join(b.worktreePath, 'agent.txt'); // main may have one from earlier merges
+    expect(existsSync(file) ? readFileSync(file, 'utf8') : '').not.toContain('тимчасово');
+    expect(sh(b.worktreePath, 'rev-parse', 'HEAD')).toBe(sh(repo, 'rev-parse', 'main'));
+    await api('POST', `/api/tasks/${b.id}/discard`);
+  }, 60000);
+
   it('switches server messages and the UI language to English', async () => {
     const info = await api('PATCH', '/api/settings', { language: 'en' });
     try {
