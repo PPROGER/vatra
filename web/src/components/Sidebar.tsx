@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project, ServerInfo, Task } from '../../../server/shared/types';
-import { CLOSED_STATUSES } from '../../../server/shared/types';
+import { CLOSED_STATUSES, compareTasks } from '../../../server/shared/types';
+import { api } from '../api';
 import { t } from '../i18n';
 import { cx, StatusDot, timeAgo } from './ui';
 
@@ -17,6 +18,7 @@ export function Sidebar({
   drafting,
   onSettings,
   onPalette,
+  onError,
 }: {
   projects: Project[];
   tasks: Task[];
@@ -31,6 +33,7 @@ export function Sidebar({
   drafting: number | null;
   onSettings: () => void;
   onPalette: () => void;
+  onError?: (message: string) => void;
 }) {
   // which projects have their archive expanded (remembered per browser)
   const [openArchives, setOpenArchives] = useState<Set<number>>(() => {
@@ -57,31 +60,136 @@ export function Sidebar({
   const waiting = tasks.filter((t) => t.status === 'idle').length;
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
 
-  const renderTask = (t: Task) => (
-    <button
-      key={t.id}
-      onClick={() => onSelect(t.id)}
-      className={cx(
-        'w-full text-left flex items-start gap-2.5 px-3 py-1.5 mx-0 border-l-2 cursor-pointer',
-        selected === t.id ? 'bg-panel-2 border-accent' : 'border-transparent hover:bg-[#151920]',
-      )}
-    >
-      <span className="pt-[5px]">
-        <StatusDot status={t.status} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className={cx('truncate text-[13px]', CLOSED_STATUSES.includes(t.status) ? 'text-faint' : 'text-fg')}>{t.title}</span>
-          {t.prUrl && t.prState === 'OPEN' && (
-            <span className="shrink-0 text-[9.5px] font-mono rounded border border-emerald-800 text-emerald-400 px-1 leading-[14px]">PR</span>
+  // inline rename and drag-to-reorder (open tasks, within one project)
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dropAt, setDropAt] = useState<{ id: number; after: boolean } | null>(null);
+
+  const saveTitle = async (task: Task) => {
+    setEditing(null);
+    const title = draft.trim();
+    if (!title || title === task.title) return;
+    try {
+      await api.renameTask(task.id, title);
+    } catch (e) {
+      onError?.((e as Error).message);
+    }
+  };
+
+  const drop = async (list: Task[], target: Task, after: boolean) => {
+    const moving = dragId;
+    setDragId(null);
+    setDropAt(null);
+    if (moving == null || moving === target.id) return;
+    const ids = list.map((x) => x.id).filter((id) => id !== moving);
+    const at = ids.indexOf(target.id) + (after ? 1 : 0);
+    ids.splice(at, 0, moving);
+    try {
+      await api.reorderTasks(target.projectId, ids);
+    } catch (e) {
+      onError?.((e as Error).message);
+    }
+  };
+
+  const renderTask = (task: Task, list?: Task[]) => {
+    const closed = CLOSED_STATUSES.includes(task.status);
+    const sortable = !!list && list.length > 1 && editing !== task.id;
+    const marker = dropAt?.id === task.id && dragId !== null && dragId !== task.id ? (dropAt.after ? 'after' : 'before') : null;
+    return (
+      <div
+        key={task.id}
+        role="button"
+        tabIndex={0}
+        draggable={sortable}
+        onClick={() => editing !== task.id && onSelect(task.id)}
+        onKeyDown={(e) => e.key === 'Enter' && editing !== task.id && onSelect(task.id)}
+        onDragStart={(e) => {
+          setDragId(task.id);
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(task.id));
+        }}
+        onDragEnd={() => {
+          setDragId(null);
+          setDropAt(null);
+        }}
+        onDragOver={(e) => {
+          if (!list || dragId === null || !list.some((x) => x.id === dragId)) return;
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          const after = e.clientY > r.top + r.height / 2;
+          if (dropAt?.id !== task.id || dropAt.after !== after) setDropAt({ id: task.id, after });
+        }}
+        onDrop={(e) => {
+          if (!list || dragId === null) return;
+          e.preventDefault();
+          void drop(list, task, dropAt?.after ?? false);
+        }}
+        className={cx(
+          'group/task relative w-full text-left flex items-start gap-2.5 px-3 py-1.5 mx-0 border-l-2 cursor-pointer outline-none',
+          selected === task.id ? 'bg-panel-2 border-accent' : 'border-transparent hover:bg-[#151920]',
+          dragId === task.id && 'opacity-40',
+        )}
+      >
+        {marker && <span className={cx('pointer-events-none absolute left-2 right-2 h-0.5 rounded bg-accent', marker === 'before' ? '-top-px' : '-bottom-px')} />}
+        <span className="pt-[5px]">
+          <StatusDot status={task.status} />
+        </span>
+        <span className="min-w-0 flex-1">
+          {editing === task.id ? (
+            <input
+              autoFocus
+              className="w-full rounded border border-accent/60 bg-bg px-1.5 py-0.5 text-[13px] text-fg outline-none"
+              value={draft}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => void saveTitle(task)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') void saveTitle(task);
+                if (e.key === 'Escape') setEditing(null);
+              }}
+            />
+          ) : (
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span
+                className={cx('truncate text-[13px]', closed ? 'text-faint' : 'text-fg')}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setDraft(task.title);
+                  setEditing(task.id);
+                }}
+                title={t('Двічі клікни, щоб перейменувати')}
+              >
+                {task.title}
+              </span>
+              {task.prUrl && task.prState === 'OPEN' && (
+                <span className="shrink-0 text-[9.5px] font-mono rounded border border-emerald-800 text-emerald-400 px-1 leading-[14px]">PR</span>
+              )}
+              <button
+                className="ml-auto shrink-0 opacity-0 group-hover/task:opacity-100 text-faint hover:text-fg px-0.5 text-[12px] cursor-pointer"
+                title={t('Перейменувати')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDraft(task.title);
+                  setEditing(task.id);
+                }}
+              >
+                ✎
+              </button>
+            </span>
           )}
+          <span className="block truncate text-[11px] text-faint font-mono">
+            {task.status === 'idle' && task.lastMessage ? (
+              <span className="text-amber-300/80 font-sans">{task.lastMessage}</span>
+            ) : (
+              `${task.slug} · ${timeAgo(task.createdAt)}`
+            )}
+          </span>
         </span>
-        <span className="block truncate text-[11px] text-faint font-mono">
-          {t.status === 'idle' && t.lastMessage ? <span className="text-amber-300/80 font-sans">{t.lastMessage}</span> : `${t.slug} · ${timeAgo(t.createdAt)}`}
-        </span>
-      </span>
-    </button>
-  );
+      </div>
+    );
+  };
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-line bg-panel">
@@ -144,7 +252,7 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto py-2">
         {projects.map((p) => {
           const pt = tasks.filter((t) => t.projectId === p.id);
-          const visible = pt.filter((t) => !CLOSED_STATUSES.includes(t.status));
+          const visible = pt.filter((t) => !CLOSED_STATUSES.includes(t.status)).sort(compareTasks);
           const archived = pt.filter((t) => CLOSED_STATUSES.includes(t.status)).sort((a, b) => b.id - a.id);
           // a selected archived task keeps its project's archive open
           const archiveOpen = openArchives.has(p.id) || archived.some((t) => t.id === selected);
@@ -175,7 +283,7 @@ export function Sidebar({
                   +
                 </button>
               </div>
-              {visible.map((t) => renderTask(t))}
+              {visible.map((t) => renderTask(t, visible))}
               {visible.length === 0 && (
                 <button className="block px-3 py-1 text-[12px] text-faint hover:text-muted cursor-pointer" onClick={() => onNewTask(p)}>
                   {t('Немає відкритих задач — створити')}

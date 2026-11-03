@@ -1,5 +1,6 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_SERVER: Record<string, string> = {
+  "Немає задач для сортування": "No tasks to reorder",
   "Задача не в архіві": "The task is not in the archive",
   "Репозиторій проєкту не знайдено: {path}": "Project repository not found: {path}",
   "Папка {path} уже існує і це не worktree задачі — прибери її й спробуй ще раз.": "The folder {path} already exists and isn't the task's worktree — remove it and try again.",

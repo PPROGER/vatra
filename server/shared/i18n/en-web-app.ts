@@ -1,5 +1,7 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_WEB_APP: Record<string, string> = {
+  "Двічі клікни, щоб перейменувати": "Double-click to rename",
+  "Перейменувати": "Rename",
   "Показати архів цього проєкту": "Show this project's archive",
   "Показати ще {n}": "Show {n} more",
   // App.tsx

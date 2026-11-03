@@ -165,6 +165,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.patch('/api/tasks/:id', async (req) => s.renameTask(idParam(req), str(((req.body ?? {}) as Body).title) ?? ''));
 
   app.get('/api/tasks', async () => s.listTasks());
+  app.put('/api/projects/:id/order', async (req) => {
+    const ids = ((req.body ?? {}) as Body).ids;
+    return s.reorderTasks(idParam(req), Array.isArray(ids) ? ids.map(Number) : []);
+  });
   app.get('/api/tasks/:id', async (req) => ({ task: s.getTask(idParam(req)), sessions: s.sessionsOf(idParam(req)), hooks: { ...s.hookInfo(idParam(req)), working: s.hooksWork(idParam(req)) } }));
   app.get('/api/tasks/:id/diff', async (req) => {
     const mode = ((req.query as Body).mode as DiffMode) ?? 'all';

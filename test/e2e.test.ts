@@ -573,6 +573,25 @@ describe('e2e', () => {
     await api('POST', `/api/tasks/${b.id}/discard`);
   }, 60000);
 
+  it('rename and manual order of tasks in a project', async () => {
+    const mk = async (title: string) => api('POST', `/api/projects/${projectId}/tasks`, { title, prompt: `order ${title}` });
+    const a = await mk('A');
+    const b = await mk('B');
+    const c = await mk('C');
+    for (const x of [a, b, c]) await waitStatus(x.id, 'idle');
+    const renamed = await api('PATCH', `/api/tasks/${a.id}`, { title: 'A renamed' });
+    expect(renamed.title).toBe('A renamed');
+    const out = await api('PUT', `/api/projects/${projectId}/order`, { ids: [a.id, c.id, b.id, 999999] });
+    expect(out.map((x: any) => x.id)).toEqual([a.id, c.id, b.id]);
+    const d = await mk('D'); // new tasks go on top of a manual order
+    const all = (await api('GET', '/api/tasks')).filter((x: any) => [a.id, b.id, c.id, d.id].includes(x.id));
+    const { compareTasks } = await import('../server/shared/types');
+    expect(all.sort(compareTasks).map((x: any) => x.id)).toEqual([d.id, a.id, c.id, b.id]);
+    await expect(api('PUT', `/api/projects/${projectId}/order`, { ids: [] })).rejects.toThrow();
+    await waitStatus(d.id, 'idle');
+    for (const x of [a, b, c, d]) await api('POST', `/api/tasks/${x.id}/discard`);
+  }, 60000);
+
   it('switches server messages and the UI language to English', async () => {
     const info = await api('PATCH', '/api/settings', { language: 'en' });
     try {

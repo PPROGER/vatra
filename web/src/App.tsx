@@ -5,7 +5,7 @@ import { NewProjectModal, ProjectSettingsModal } from './components/Modals';
 import { NewTask } from './components/NewTask';
 import { SettingsModal } from './components/Settings';
 import { Palette } from './components/Palette';
-import { CLOSED_STATUSES } from '../../server/shared/types';
+import { CLOSED_STATUSES, compareTasks } from '../../server/shared/types';
 import { Sidebar } from './components/Sidebar';
 import { TaskView } from './components/TaskView';
 import { Button, Toasts, type Toast } from './components/ui';
@@ -160,7 +160,7 @@ export function App() {
         return;
       }
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        const order = projects.flatMap((p) => tasks.filter((t) => t.projectId === p.id && !CLOSED_STATUSES.includes(t.status)));
+        const order = projects.flatMap((p) => tasks.filter((t) => t.projectId === p.id && !CLOSED_STATUSES.includes(t.status)).sort(compareTasks));
         if (!order.length) return;
         e.preventDefault();
         const i = order.findIndex((t) => t.id === selected);
@@ -206,6 +206,7 @@ export function App() {
         drafting={task ? null : (draft ?? projects[0]?.id ?? null)}
         onSettings={() => setModal({ kind: 'app' })}
         onPalette={() => setPalette(true)}
+        onError={(m) => toast('error', t('Не вдалося'), m)}
         onProjectSettings={(p) => setModal({ kind: 'settings', project: p })}
       />
       <main className="flex-1 min-w-0">

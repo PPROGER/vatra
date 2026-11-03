@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, sqliteTable, text, real } from 'drizzle-orm/sqlite-core';
 import type { Project, Session, Task, TaskStatus } from './shared/types.js';
 
 export const projects = sqliteTable('projects', {
@@ -35,6 +35,8 @@ export const tasks = sqliteTable('tasks', {
   mergedAt: text('merged_at'),
   prUrl: text('pr_url'),
   prState: text('pr_state'),
+  /** Manual order inside the project in the sidebar (smaller = higher); null = by creation. */
+  position: real('position'),
 });
 
 export const sessions = sqliteTable('sessions', {
@@ -105,6 +107,7 @@ function migrate(sqlite: Database.Database) {
   const taskCols = cols('tasks');
   if (!taskCols.has('pr_url')) sqlite.exec('ALTER TABLE tasks ADD COLUMN pr_url TEXT');
   if (!taskCols.has('pr_state')) sqlite.exec('ALTER TABLE tasks ADD COLUMN pr_state TEXT');
+  if (!taskCols.has('position')) sqlite.exec('ALTER TABLE tasks ADD COLUMN position REAL');
 }
 
 export type DB = BetterSQLite3Database<{ projects: typeof projects; tasks: typeof tasks; sessions: typeof sessions }>;

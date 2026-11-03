@@ -55,6 +55,8 @@ export interface Task {
   prUrl: string | null;
   /** OPEN | MERGED | CLOSED as reported by gh. */
   prState: string | null;
+  /** Manual order inside the project (smaller = higher); null = newest first. */
+  position: number | null;
   /** True while a tmux session for this task exists. Computed, not stored. */
   alive?: boolean;
   /** Commits the base branch (origin/<base> when there is a remote) has that the agent branch lacks. */
@@ -63,6 +65,14 @@ export interface Task {
   baseRef?: string | null;
   /** Short line from the last Notification hook ("Claude needs your permission…"). */
   lastMessage?: string | null;
+}
+
+/** Sidebar order inside a project: manual positions first by position, unsorted (newer) tasks above them. */
+export function compareTasks(a: Pick<Task, 'id' | 'position'>, b: Pick<Task, 'id' | 'position'>): number {
+  if (a.position == null && b.position == null) return b.id - a.id;
+  if (a.position == null) return -1;
+  if (b.position == null) return 1;
+  return a.position - b.position || b.id - a.id;
 }
 
 export interface Session {

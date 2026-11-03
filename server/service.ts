@@ -252,6 +252,7 @@ export class TaskService {
         port: this.allocatePort(),
         hookToken: randomBytes(16).toString('hex'),
         createdAt: now(),
+        position: this.topPosition(projectId),
       })
       .returning()
       .get();
@@ -275,6 +276,13 @@ export class TaskService {
       this.setStatus(row.id, 'error', (err as Error).message);
     });
     return this.dto(row);
+  }
+
+  /** A new task goes to the top; null while the project has no manual order yet. */
+  private topPosition(projectId: number): number | null {
+    const rows = this.d.db.select({ p: tasks.position }).from(tasks).where(eq(tasks.projectId, projectId)).all();
+    const set = rows.map((r) => r.p).filter((p): p is number => p != null);
+    return set.length ? Math.min(...set) - 1 : null;
   }
 
   private allocatePort(): number | null {
@@ -694,6 +702,15 @@ export class TaskService {
 
   projectCommands(projectId: number): SlashCommand[] {
     return listSlashCommands(this.getProject(projectId).repoPath);
+  }
+
+  /** Saves the sidebar order of a project's tasks (ids top to bottom). */
+  reorderTasks(projectId: number, ids: number[]): Task[] {
+    this.getProject(projectId);
+    const own = new Set(this.d.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.projectId, projectId)).all().map((r) => r.id));
+    const list = [...new Set(ids.filter((id) => Number.isInteger(id) && own.has(id)))];
+    if (!list.length) throw new UserError(tr('Немає задач для сортування'));
+    return list.map((id, i) => this.update(id, { position: i }));
   }
 
   renameTask(taskId: number, title: string): Task {
