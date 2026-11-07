@@ -37,6 +37,10 @@ export const tasks = sqliteTable('tasks', {
   prState: text('pr_state'),
   /** Manual order inside the project in the sidebar (smaller = higher); null = by creation. */
   position: real('position'),
+  /** Helper agents: the task that asked for this one. */
+  parentId: integer('parent_id'),
+  /** Helper agents: working → reported (its final answer went back to the parent). */
+  helperState: text('helper_state'),
 });
 
 export const sessions = sqliteTable('sessions', {
@@ -108,6 +112,8 @@ function migrate(sqlite: Database.Database) {
   if (!taskCols.has('pr_url')) sqlite.exec('ALTER TABLE tasks ADD COLUMN pr_url TEXT');
   if (!taskCols.has('pr_state')) sqlite.exec('ALTER TABLE tasks ADD COLUMN pr_state TEXT');
   if (!taskCols.has('position')) sqlite.exec('ALTER TABLE tasks ADD COLUMN position REAL');
+  if (!taskCols.has('parent_id')) sqlite.exec('ALTER TABLE tasks ADD COLUMN parent_id INTEGER');
+  if (!taskCols.has('helper_state')) sqlite.exec('ALTER TABLE tasks ADD COLUMN helper_state TEXT');
 }
 
 export type DB = BetterSQLite3Database<{ projects: typeof projects; tasks: typeof tasks; sessions: typeof sessions }>;

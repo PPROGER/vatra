@@ -57,6 +57,10 @@ export interface Task {
   prState: string | null;
   /** Manual order inside the project (smaller = higher); null = newest first. */
   position: number | null;
+  /** Helper agents: the task that started this one. */
+  parentId: number | null;
+  /** Helper agents: 'working' until its report went back to the parent, then 'reported'. */
+  helperState: string | null;
   /** True while a tmux session for this task exists. Computed, not stored. */
   alive?: boolean;
   /** Commits the base branch (origin/<base> when there is a remote) has that the agent branch lacks. */

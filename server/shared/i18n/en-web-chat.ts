@@ -1,6 +1,16 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 // Covers web/src/components: TaskView, Chat, ChatItems, Composer, Terminal.
 export const EN_WEB_CHAT: Record<string, string> = {
+  "Його фінальна відповідь піде в чат батьківської задачі": "Its final answer goes to the parent task's chat",
+  "помічник задачі #{id}": "helper of task #{id}",
+  "звіт передано": "report sent",
+  "Помічник": "Helper",
+  "Рев'ю від помічника": "Review by a helper",
+  "окремий агент перевірить зміни й напише в цей чат": "a separate agent reviews the changes and writes back here",
+  "Помічник запущений — звіт прийде в чат": "Helper started — its report will arrive in the chat",
+  "Інше завдання помічнику…": "Other job for a helper…",
+  "довільне завдання на копії цього worktree": "any job on a copy of this worktree",
+  "Що має зробити помічник? Його відповідь прийде в цей чат.": "What should the helper do? Its answer will arrive in this chat.",
   "Задача в архіві.": "This task is archived.",
   "Можна повернути її: Ватра знову створить worktree, і агент продовжить ту саму розмову.": "You can bring it back: Vatra recreates the worktree and the agent continues the same conversation.",
   "Задачу повернуто в роботу": "Task reopened",

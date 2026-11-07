@@ -283,7 +283,23 @@ export function Sidebar({
                   +
                 </button>
               </div>
-              {visible.map((t) => renderTask(t, visible))}
+              {(() => {
+                // helpers sit under their parent task
+                const openIds = new Set(visible.map((x) => x.id));
+                const top = visible.filter((x) => !x.parentId || !openIds.has(x.parentId));
+                return top.map((x) => (
+                  <div key={x.id}>
+                    {renderTask(x, top)}
+                    {visible
+                      .filter((h) => h.parentId === x.id)
+                      .map((h) => (
+                        <div key={h.id} className="pl-4 relative before:absolute before:left-4 before:top-0 before:bottom-2 before:border-l before:border-line">
+                          {renderTask(h)}
+                        </div>
+                      ))}
+                  </div>
+                ));
+              })()}
               {visible.length === 0 && (
                 <button className="block px-3 py-1 text-[12px] text-faint hover:text-muted cursor-pointer" onClick={() => onNewTask(p)}>
                   {t('Немає відкритих задач — створити')}

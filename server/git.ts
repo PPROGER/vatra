@@ -2,7 +2,8 @@
 // a repository goes through here, so the git-level behaviour is easy to audit.
 import { tr } from './shared/i18n/index.js';
 import { execFile } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { DiffMode, DiffResult } from './shared/types.js';
 
@@ -168,6 +169,26 @@ export async function addWorktree(repo: string, path: string, branch: string, co
 export async function addWorktreeForBranch(repo: string, path: string, branch: string): Promise<void> {
   mkdirSync(dirname(path), { recursive: true });
   await run(repo, ['worktree', 'add', path, branch]);
+}
+
+/**
+ * A commit with the worktree exactly as it is now — uncommitted and untracked files
+ * included — without touching its index or files (uses a throwaway index).
+ */
+export async function snapshotCommit(wt: string, message: string): Promise<string> {
+  const head = (await out(wt, ['rev-parse', 'HEAD'])).trim();
+  const index = join(tmpdir(), `vatra-index-${process.pid}-${Date.now()}`);
+  try {
+    const env = { GIT_INDEX_FILE: index };
+    await run(wt, ['read-tree', 'HEAD'], { env });
+    await run(wt, ['add', '-A'], { env });
+    const tree = (await run(wt, ['write-tree'], { env })).stdout.trim();
+    const headTree = (await out(wt, ['rev-parse', 'HEAD^{tree}'])).trim();
+    if (tree === headTree) return head;
+    return (await run(wt, ['-c', 'user.name=Vatra', '-c', 'user.email=vatra@localhost', 'commit-tree', tree, '-p', head, '-m', message])).stdout.trim();
+  } finally {
+    rmSync(index, { force: true });
+  }
 }
 
 export async function mergeBase(repo: string, a: string, b: string): Promise<string | null> {

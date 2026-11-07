@@ -137,6 +137,12 @@ export function TaskView({
           <div className="flex items-center gap-2.5">
             <EditableTitle task={task} onError={(m) => toast('error', t('Не вдалося перейменувати'), m)} />
             <StatusBadge status={task.status} />
+            {task.parentId && (
+              <span className="text-[11px] rounded border border-line-2 px-1.5 text-muted" title={t('Його фінальна відповідь піде в чат батьківської задачі')}>
+                ↳ {t('помічник задачі #{id}', { id: task.parentId })}
+                {task.helperState === 'reported' ? ` · ${t('звіт передано')}` : ''}
+              </span>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-muted font-mono">
             <span title={t('Гілка агента')}>{task.branch}</span>
@@ -218,6 +224,24 @@ export function TaskView({
                         ? { section: 'Git', label: t('Злити…'), hint: t('merge / squash, з push або без'), onClick: () => setMergeOpen(true), disabled: !canMerge }
                         : { section: 'Git', label: prOpen ? t('Оновити PR') : t('Створити PR'), hint: `push + PR → ${task.baseBranch}`, onClick: () => void pr(), disabled: !canMerge },
                       ...(prOpen ? [{ label: t('Перевірити PR'), hint: t('чи вже злили (й так раз на 2 хв)'), onClick: () => void prCheck() }] : []),
+                      ...(!task.parentId
+                        ? [
+                            {
+                              section: t('Помічник'),
+                              label: t('Рев\'ю від помічника'),
+                              hint: t('окремий агент перевірить зміни й напише в цей чат'),
+                              onClick: () => act('helper', () => api.helper(task.id, { review: true }), t('Помічник запущений — звіт прийде в чат')),
+                            },
+                            {
+                              label: t('Інше завдання помічнику…'),
+                              hint: t('довільне завдання на копії цього worktree'),
+                              onClick: () => {
+                                const prompt = window.prompt(t('Що має зробити помічник? Його відповідь прийде в цей чат.'));
+                                if (prompt?.trim()) void act('helper', () => api.helper(task.id, { prompt }), t('Помічник запущений — звіт прийде в чат'));
+                              },
+                            },
+                          ]
+                        : []),
                       { section: t('Відкрити'), label: 'Zed', onClick: () => act('open', () => api.open(task.id, 'zed')) },
                       { label: t('Файли'), hint: t('Finder / файловий менеджер'), onClick: () => act('open', () => api.open(task.id, 'files')) },
                       { label: t('Термінал'), onClick: () => act('open', () => api.open(task.id, 'terminal')) },

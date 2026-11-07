@@ -104,6 +104,18 @@ def ask_questions():
     return answers
 
 def work(text):
+    if text.startswith("read-only"):
+        # a reviewing helper: answers without touching files
+        hook("UserPromptSubmit", {"prompt": text})
+        record({"type": "user", "message": {"role": "user", "content": text}})
+        assistant([{"type": "text", "text": "Огляд: все добре, зауважень немає."}])
+        record({"type": "system", "subtype": "turn_duration", "durationMs": 1000})
+        hook("Stop")
+        return
+    if "spawn-helper" in text:
+        out = subprocess.run([os.environ["VATRA_HELPER"], "read-only review of the changes"], capture_output=True, text=True)
+        with open("helper-out.txt", "w") as f:
+            f.write(out.stdout + out.stderr)
     if "ask-question" in text:
         hook("UserPromptSubmit", {"prompt": text})
         record({"type": "user", "message": {"role": "user", "content": text}})
@@ -190,7 +202,7 @@ hook("SessionStart", {"source": "resume" if "--resume" in args else "startup"})
 # so tests can't pass by racing it (CI on macOS is slower than a dev box)
 import time
 time.sleep(0.4)
-positional = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--resume", "--settings"))]
+positional = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--resume", "--settings", "--append-system-prompt"))]
 if positional:
     work(positional[-1])
 # like the real TUI, ask the terminal for bracketed paste so multi-line pastes arrive as one message

@@ -240,6 +240,17 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
 
   // Claude Code hooks (curl from inside the worktree)
+  // the agent's own "$VATRA_HELPER" script (authorised by the task's hook token)
+  app.post('/api/hooks/:id/helper', async (req) => {
+    const q = req.query as Body;
+    const b = (req.body ?? {}) as Body;
+    const h = await s.createHelperFromAgent(idParam(req), str(q.token) ?? '', str(b.prompt) ?? '');
+    return { id: h.id, title: h.title };
+  });
+  app.post('/api/tasks/:id/helpers', async (req) => {
+    const b = (req.body ?? {}) as Body;
+    return s.createHelper(idParam(req), { prompt: str(b.prompt) ?? '', title: str(b.title), review: b.review === true });
+  });
   app.post('/api/hooks/:id', async (req) => {
     const q = req.query as Body;
     const payload = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;

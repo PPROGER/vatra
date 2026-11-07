@@ -592,6 +592,31 @@ describe('e2e', () => {
     for (const x of [a, b, c, d]) await api('POST', `/api/tasks/${x.id}/discard`);
   }, 60000);
 
+  it('helper agents: started by the agent itself, the report comes back to the parent chat', async () => {
+    const parent = await api('POST', `/api/projects/${projectId}/tasks`, { title: 'parent', prompt: 'spawn-helper зроби щось' });
+    await waitFor(async () => existsSync(join(parent.worktreePath, 'helper-out.txt')), 'helper requested');
+    expect(readFileSync(join(parent.worktreePath, 'helper-out.txt'), 'utf8')).toMatch(/Helper #\d+ started/);
+    const helper = await waitFor(async () => (await api('GET', '/api/tasks')).find((x: any) => x.parentId === parent.id), 'helper task');
+    expect(helper.title).toContain('Помічник');
+    expect(helper.baseBranch).toBe(parent.branch);
+    // the report lands in the parent as a message (fake claude appends every message to agent.txt)
+    await waitFor(async () => readFileSync(join(parent.worktreePath, 'agent.txt'), 'utf8').includes('[helper report'), 'report delivered', 30000);
+    expect(readFileSync(join(parent.worktreePath, 'agent.txt'), 'utf8')).toContain('все добре');
+    // a read-only helper is tidied up
+    const h = await waitFor(async () => {
+      const x = (await api('GET', `/api/tasks/${helper.id}`)).task;
+      return x.status === 'done' ? x : undefined;
+    }, 'helper archived');
+    expect(h.helperState).toBe('reported');
+    expect(existsSync(helper.worktreePath)).toBe(false);
+    // helpers can't start helpers; bad token is refused
+    await expect(api('POST', `/api/tasks/${helper.id}/helpers`, { prompt: 'x' })).rejects.toThrow();
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/hooks/${parent.id}/helper?token=nope`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"prompt":"x"}' });
+    expect(res.status).toBe(403);
+    await waitStatus(parent.id, 'idle');
+    await api('POST', `/api/tasks/${parent.id}/discard`);
+  }, 60000);
+
   it('switches server messages and the UI language to English', async () => {
     const info = await api('PATCH', '/api/settings', { language: 'en' });
     try {

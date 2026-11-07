@@ -2,7 +2,7 @@
 // and the diff watcher, and is the only place that changes task status.
 import { tr } from './shared/i18n/index.js';
 import { randomBytes } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -299,15 +299,17 @@ export class TaskService {
     return null;
   }
 
-  private async provision(taskId: number): Promise<void> {
+  private async provision(taskId: number, startCommit?: string): Promise<void> {
     const t = this.row(taskId);
     const project = this.getProject(t.projectId);
     const repo = project.repoPath;
 
     await this.withLock(repo, async () => {
-      const fetchErr = await git.fetchQuiet(repo);
-      if (fetchErr) this.log(`[task ${taskId}] git fetch: ${fetchErr}`);
-      const baseCommit = await git.revParse(repo, t.baseBranch);
+      if (!startCommit) {
+        const fetchErr = await git.fetchQuiet(repo);
+        if (fetchErr) this.log(`[task ${taskId}] git fetch: ${fetchErr}`);
+      }
+      const baseCommit = startCommit ?? (await git.revParse(repo, t.baseBranch));
       this.update(taskId, { baseCommit });
       await git.addWorktree(repo, t.worktreePath, t.branch, baseCommit);
     });
@@ -404,7 +406,8 @@ export class TaskService {
 
     const previous = this.lastSession(taskId);
     const isFirst = !previous;
-    const args = [...(flagSettings ? ['--settings', flagSettings] : []), ...this.d.config.claudeArgs];
+    const args = [...(flagSettings ? ['--settings', flagSettings] : []), '--append-system-prompt', this.systemPrompt(t), ...this.d.config.claudeArgs];
+    const helperScript = t.parentId ? null : this.helperScript();
     if (!isFirst) {
       if (previous.claudeSessionId) args.push('--resume', previous.claudeSessionId);
       else args.push('--continue');
@@ -431,6 +434,8 @@ export class TaskService {
       env: {
         PORT: port ? String(port) : undefined,
         VATRA_TASK_ID: String(taskId),
+        VATRA_HELPER: helperScript ?? undefined,
+        VATRA_HELPER_URL: helperScript ? `http://127.0.0.1:${this.d.config.port}/api/hooks/${taskId}/helper?token=${t.hookToken}` : undefined,
         VATRA_BRANCH: t.branch,
         COLORTERM: 'truecolor',
         PATH: this.d.pathEnv ?? undefined,
@@ -865,6 +870,10 @@ export class TaskService {
         break;
       case 'Stop': {
         this.update(taskId, { status: 'idle', lastMessage: null });
+        if (t.parentId && t.helperState === 'working') {
+          // give the transcript a moment to get the last lines, then report back
+          setTimeout(() => void this.deliverHelperReport(taskId).catch((e) => this.log(`[task ${taskId}] helper report: ${(e as Error).message}`)), 1500);
+        }
         void this.refreshBaseAhead({ taskId }).catch(() => {});
         void this.syncBranch(taskId).catch(() => {});
         chat.setMeta(taskId, { permission: null, activity: null });
@@ -1126,6 +1135,148 @@ export class TaskService {
       this.log(`[task ${taskId}] finished by hand. ${note}`);
       return { task, note, message: tr('Задачу завершено. {note}', { note }).trim() };
     });
+  }
+
+  // ------------------------------------------------------------- helper agents
+
+  /** Extra instructions for claude: how to use helpers, or how to behave as one. */
+  private systemPrompt(t: TaskRow): string {
+    if (t.parentId) {
+      return [
+        'You are a helper agent started by another Claude agent (via Vatra) to do one self-contained job in a snapshot of its worktree.',
+        'Your final reply is forwarded verbatim to that agent as a message, so end with a complete, concise report: findings, concrete file:line references, recommendations.',
+        'Do not commit, push or open pull requests unless the job explicitly asks for it. Do not ask the user questions — make reasonable assumptions and state them.',
+      ].join(' ');
+    }
+    return [
+      'You run inside Vatra, a dashboard for parallel Claude agents; this task has its own git worktree and branch.',
+      'For a self-contained side job that benefits from a fresh pair of eyes (an independent code review of your changes, a focused investigation, research), you can start a helper agent:',
+      'run `"$VATRA_HELPER" "<complete instructions>"` in Bash. It works in a snapshot of your current worktree and its final report arrives later as a user message starting with "[helper report".',
+      'Do not wait or poll for it — keep working or end your turn. Use helpers sparingly (at most a few per task).',
+    ].join(' ');
+  }
+
+  /** Small node script the agent calls as $VATRA_HELPER (posts to this server with the task's hook token). */
+  private helperScript(): string {
+    const file = join(this.d.paths.runDir, 'vatra-helper.mjs');
+    const src = `#!${process.execPath}
+// Generated by Vatra: starts a helper agent for the current task. Usage: "$VATRA_HELPER" "instructions"
+const prompt = process.argv.slice(2).join(' ').trim();
+if (!prompt) { console.error('usage: "$VATRA_HELPER" "<instructions for the helper agent>"'); process.exit(2); }
+const res = await fetch(process.env.VATRA_HELPER_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt }) }).catch((e) => ({ ok: false, json: async () => ({ error: e.message }) }));
+const out = await res.json().catch(() => ({}));
+if (!res.ok) { console.error('helper not started: ' + (out.error ?? res.status)); process.exit(1); }
+console.log('Helper #' + out.id + ' started ("' + out.title + '"). Its report will arrive later as a message starting with "[helper report". Do not wait for it.');
+`;
+    try {
+      if (!existsSync(file) || readFileSync(file, 'utf8') !== src) writeFileSync(file, src, { mode: 0o755 });
+    } catch (e) {
+      this.log(`helper script: ${(e as Error).message}`);
+    }
+    return file;
+  }
+
+  /** Called by the agent itself ($VATRA_HELPER) with its hook token. */
+  async createHelperFromAgent(taskId: number, token: string, prompt: string): Promise<Task> {
+    const t = this.d.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+    if (!t || t.hookToken !== token) throw new UserError(tr('Невірний hook token'), 403);
+    return this.createHelper(taskId, { prompt });
+  }
+
+  /**
+   * Starts a helper agent for a task: a new task on a snapshot of the parent's worktree
+   * (committed and uncommitted changes, untracked files included — the parent is not touched).
+   * Its final answer is sent back to the parent as a chat message.
+   */
+  async createHelper(parentId: number, input: { prompt: string; title?: string | null; review?: boolean }): Promise<Task> {
+    const parent = this.row(parentId);
+    if (input.review) {
+      const base = parent.baseCommit ?? parent.baseBranch;
+      input = {
+        title: tr('Рев\'ю: {title}', { title: parent.title }),
+        prompt: [
+          `Do an independent, critical code review of the work in this worktree: everything that changed since ${base} (run \`git diff ${base}\` and \`git log --oneline ${base}..HEAD\`).`,
+          `The task the author was working on: ${parent.title}.`,
+          'Look for bugs, regressions, missing edge cases, security problems, unclear or dead code and missing tests. Read the surrounding code where needed.',
+          'Report a prioritised list (blocking issues first) with file:line references and concrete suggestions. Do not change any files. If everything looks good, say so briefly.',
+        ].join('\n'),
+      };
+    }
+    if (parent.parentId) throw new UserError(tr('Помічник не може запускати своїх помічників'), 409);
+    if (!OPEN_STATUSES.includes(parent.status) || parent.status === 'creating') throw new UserError(tr('Задача в стані {status}', { status: parent.status }), 409);
+    if (!existsSync(parent.worktreePath)) throw new UserError(tr('Worktree не існує'), 410);
+    const prompt = input.prompt.trim();
+    if (!prompt) throw new UserError(tr('Напиши, що має зробити помічник'));
+    const busy = this.d.db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.parentId, parentId), inArray(tasks.status, [...OPEN_STATUSES]))).all();
+    if (busy.length >= 3) throw new UserError(tr('У задачі вже {n} активних помічники — дочекайся їхніх звітів', { n: busy.length }), 429);
+
+    const snapshot = await git.snapshotCommit(parent.worktreePath, `vatra: snapshot of ${parent.branch} for a helper`);
+    const project = this.getProject(parent.projectId);
+    const title = (input.title?.trim() || tr('Помічник: {what}', { what: titleFromPrompt(prompt) || prompt.slice(0, 60) })).slice(0, 200);
+    const projectDir = join(this.d.paths.worktreesDir, safeDirName(project.name, project.id));
+    const slug = await uniqueSlug(slugify(`${parent.slug}-helper`), async (s2) => {
+      const inDb = this.d.db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.projectId, project.id), eq(tasks.slug, s2))).get();
+      return !!inDb || existsSync(join(projectDir, s2)) || (await git.branchExists(project.repoPath, `agent/${s2}`));
+    });
+    const row = this.d.db
+      .insert(tasks)
+      .values({
+        projectId: project.id,
+        title,
+        slug,
+        prompt,
+        branch: `agent/${slug}`,
+        baseBranch: parent.branch,
+        baseCommit: null,
+        worktreePath: join(projectDir, slug),
+        status: 'creating',
+        port: this.allocatePort(),
+        hookToken: randomBytes(16).toString('hex'),
+        createdAt: now(),
+        parentId,
+        helperState: 'working',
+      })
+      .returning()
+      .get();
+    this.d.emit({ type: 'task', task: this.dto(row) });
+    this.log(`[task ${parentId}] helper #${row.id} started: ${title}`);
+    void this.provision(row.id, snapshot).catch((err) => {
+      this.log(`[task ${row.id}] helper create failed: ${(err as Error).message}`);
+      this.setStatus(row.id, 'error', (err as Error).message);
+    });
+    return this.dto(row);
+  }
+
+  /** The helper finished its turn: hand its final answer to the parent and tidy up. */
+  private async deliverHelperReport(helperId: number): Promise<void> {
+    const h = this.row(helperId);
+    if (!h.parentId || h.helperState !== 'working') return;
+    this.d.db.update(tasks).set({ helperState: 'reported' }).where(eq(tasks.id, helperId)).run();
+    const items = this.chatState(helperId).items;
+    let lastUser = -1;
+    items.forEach((it, i) => {
+      if (it.kind === 'user') lastUser = i;
+    });
+    const answer = items
+      .slice(lastUser + 1)
+      .filter((it) => it.kind === 'assistant')
+      .map((it) => (it.kind === 'assistant' ? it.text : ''))
+      .join('\n\n')
+      .trim();
+    const report = `[helper report — #${h.id} «${h.title}»]\n${answer || tr('(помічник завершив без текстової відповіді)')}`;
+    const parent = this.d.db.select().from(tasks).where(eq(tasks.id, h.parentId)).get();
+    if (parent && OPEN_STATUSES.includes(parent.status) && parent.status !== 'creating') {
+      await this.sendMessage(parent.id, report).catch((e) => this.log(`[task ${helperId}] report not delivered: ${(e as Error).message}`));
+      this.log(`[task ${helperId}] helper report sent to task ${parent.id}`);
+    }
+    this.update(helperId, { lastMessage: tr('Звіт передано в задачу #{id}', { id: h.parentId }) });
+    // a read-only helper (no commits, clean worktree) has nothing left to keep
+    const clean = existsSync(h.worktreePath) && !(await git.isDirty(h.worktreePath).catch(() => true));
+    const ahead = h.baseCommit ? await git.aheadCount(h.worktreePath, h.baseCommit, 'HEAD').catch(() => 1) : 1;
+    if (clean && ahead === 0) {
+      await this.discard(helperId).catch((e) => this.log(`[task ${helperId}] helper cleanup: ${(e as Error).message}`));
+      this.update(helperId, { status: 'done', statusReason: tr('Звіт передано в задачу #{id}', { id: h.parentId }) });
+    }
   }
 
   /**

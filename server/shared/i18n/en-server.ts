@@ -1,5 +1,12 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_SERVER: Record<string, string> = {
+  "Рев'ю: {title}": "Review: {title}",
+  "Помічник не може запускати своїх помічників": "A helper can't start helpers of its own",
+  "Напиши, що має зробити помічник": "Write what the helper should do",
+  "У задачі вже {n} активних помічники — дочекайся їхніх звітів": "This task already has {n} active helpers — wait for their reports",
+  "Помічник: {what}": "Helper: {what}",
+  "(помічник завершив без текстової відповіді)": "(the helper finished without a text answer)",
+  "Звіт передано в задачу #{id}": "Report sent to task #{id}",
   "Немає задач для сортування": "No tasks to reorder",
   "Задача не в архіві": "The task is not in the archive",
   "Репозиторій проєкту не знайдено: {path}": "Project repository not found: {path}",

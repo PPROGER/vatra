@@ -122,6 +122,7 @@ export const api = {
   discard: (id: number) => req<Task>('POST', `/api/tasks/${id}/discard`),
   rebase: (id: number) => req<{ delivered: 'typed' | 'relaunch'; ref: string }>('POST', `/api/tasks/${id}/rebase`),
   settings: (b: { language?: 'auto' | 'uk' | 'en'; idleSleepMinutes?: number; maxActive?: number }) => req<ServerInfo>('PATCH', '/api/settings', b),
+  helper: (id: number, body: { prompt?: string; review?: boolean }) => req<Task>('POST', `/api/tasks/${id}/helpers`, body),
   reorderTasks: (projectId: number, ids: number[]) => req<Task[]>('PUT', `/api/projects/${projectId}/order`, { ids }),
   reopen: (id: number) => req<{ task: Task; note: string }>('POST', `/api/tasks/${id}/reopen`),
   finish: (id: number, force = false) => req<{ task: Task; message: string; note: string }>('POST', `/api/tasks/${id}/finish`, { force }),
