@@ -12,6 +12,8 @@ import { TaskService, UserError } from './service.js';
 import type { DiffMode, QuestionAnswer, ServerEvent, ServerInfo } from './shared/types.js';
 import type { OpenTarget } from './platform.js';
 import type { MergeStrategy } from './git.js';
+import type { Machines } from './machines.js';
+import { randomBytes } from 'node:crypto';
 
 export interface AppDeps {
   service: TaskService;
@@ -26,6 +28,7 @@ export interface AppDeps {
     maintenance: () => Promise<void>;
   };
   subscribe: (fn: (e: ServerEvent) => void) => () => void;
+  machines?: Machines;
 }
 
 function sendUpload(reply: FastifyReply, path: string) {
@@ -70,11 +73,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (!allowedHosts.has(host)) return reply.code(403).send({ error: 'Forbidden host' });
     const url = req.url;
     const origin = req.headers.origin;
-    if (origin && (url.startsWith('/api/') || url.startsWith('/ws/')) && !allowedOrigins.has(origin)) {
+    const guarded = url.startsWith('/api/') || url.startsWith('/ws/') || url.startsWith('/m/');
+    if (origin && guarded && !allowedOrigins.has(origin)) {
       return reply.code(403).send({ error: 'Forbidden origin' });
     }
     if (url.startsWith('/api/hooks/')) return; // validated with the per-task hook token
-    if (url.startsWith('/api/') || url.startsWith('/ws/')) {
+    if (guarded) {
       if (!safeEq(tokenOf(req), d.token)) return reply.code(401).send({ error: 'Bad token' });
     }
   });
@@ -240,6 +244,51 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
 
   // Claude Code hooks (curl from inside the worktree)
+  // ------------------------------------------------------------- remote machines
+  const machines = d.machines;
+  app.get('/api/machines', async () => machines?.infos() ?? []);
+  app.post('/api/machines', async (req) => {
+    if (!machines) throw new UserError('machines are not available', 501);
+    const b = (req.body ?? {}) as Body;
+    const ssh = (str(b.ssh) ?? '').trim();
+    const name = (str(b.name) ?? '').trim() || ssh;
+    // a plain [user@]host[:port] or ~/.ssh/config alias — never something ssh could read as an option
+    if (!/^[A-Za-z0-9_.@\[\]:-]+$/.test(ssh) || ssh.startsWith('-')) throw new UserError(tr('Вкажи адресу SSH: user@host або назву з ~/.ssh/config'));
+    const remotePort = typeof b.remotePort === 'number' && b.remotePort > 0 && b.remotePort < 65536 ? b.remotePort : undefined;
+    const id = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'machine'}-${randomBytes(3).toString('hex')}`;
+    return machines.add({ id, name: name.slice(0, 60), ssh, remotePort });
+  });
+  app.delete('/api/machines/:mid', async (req) => {
+    machines?.remove((req.params as { mid: string }).mid);
+    return { ok: true };
+  });
+  // everything under /m/<machine>/api/… goes to that machine's Vatra
+  app.route({
+    method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    url: '/m/:mid/api/*',
+    bodyLimit: 30 * 1024 * 1024,
+    handler: async (req, reply) => {
+      const m = machines?.get((req.params as { mid: string }).mid);
+      if (!m) throw new UserError(tr('Машину не знайдено'), 404);
+      const u = new URL(req.url, 'http://x');
+      u.searchParams.delete('token');
+      const path = u.pathname.replace(/^\/m\/[^/]+/, '') + (u.search || '');
+      let body: Buffer | undefined;
+      if (req.method !== 'GET' && req.body !== undefined && req.body !== null) {
+        body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
+      }
+      let res;
+      try {
+        res = await m.forward(req.method, path, req.headers, body);
+      } catch (e) {
+        throw new UserError(tr('Машина {name} недоступна: {error}', { name: m.cfg.name, error: (e as Error).message }), 502);
+      }
+      reply.code(res.statusCode ?? 502);
+      for (const k of ['content-type', 'content-security-policy', 'cache-control']) if (res.headers[k]) reply.header(k, res.headers[k] as string);
+      return reply.send(res);
+    },
+  });
+
   // the agent's own "$VATRA_HELPER" script (authorised by the task's hook token)
   app.post('/api/hooks/:id/helper', async (req) => {
     const q = req.query as Body;
@@ -280,6 +329,35 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       });
     });
 
+    scope.get('/m/:mid/ws/*', { websocket: true }, (socket: WebSocket, req) => {
+      const m = machines?.get((req.params as { mid: string }).mid);
+      const u = new URL(req.url, 'http://x');
+      u.searchParams.delete('token');
+      const path = u.pathname.replace(/^\/m\/[^/]+/, '') + (u.search || '');
+      let upstream: ReturnType<NonNullable<typeof m>['connectWs']>;
+      try {
+        if (!m) throw new Error('unknown machine');
+        upstream = m.connectWs(path);
+      } catch {
+        socket.close(4502, 'machine offline');
+        return;
+      }
+      const queue: (Buffer | string)[] = [];
+      socket.on('message', (raw: Buffer, isBinary: boolean) => {
+        const data = isBinary ? raw : String(raw);
+        if (upstream.readyState === upstream.OPEN) upstream.send(data);
+        else queue.push(data);
+      });
+      upstream.on('open', () => {
+        for (const q of queue.splice(0)) upstream.send(q);
+      });
+      upstream.on('message', (raw, isBinary) => socket.readyState === socket.OPEN && socket.send(isBinary ? raw : String(raw)));
+      const code = (c: number) => (c >= 3000 && c < 5000) || c === 1000 ? c : 1000;
+      upstream.on('close', (c, reason) => socket.readyState === socket.OPEN && socket.close(code(c), String(reason)));
+      upstream.on('error', () => socket.readyState === socket.OPEN && socket.close(4502, 'machine offline'));
+      socket.on('close', () => upstream.close());
+    });
+
     scope.get('/ws/pty/:id', { websocket: true }, (socket: WebSocket, req) => {
       const taskId = Number((req.params as { id: string }).id);
       const client = {
@@ -316,7 +394,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     app.get('/', sendIndex);
     app.get('/assets/*', (req, reply) => reply.sendFile((req.params as { '*': string })['*'], join(d.webDir!, 'assets')));
     app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith('/api/') || req.url.startsWith('/ws/')) return reply.code(404).send({ error: 'Not found' });
+      if (req.url.startsWith('/api/') || req.url.startsWith('/ws/') || req.url.startsWith('/m/')) return reply.code(404).send({ error: 'Not found' });
       return sendIndex(req, reply);
     });
   } else {

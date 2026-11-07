@@ -25,6 +25,8 @@ export interface Config {
   idleSleepMinutes: number;
   /** Context window size for the usage bar. Max plan sessions: 1M. */
   contextWindow: number | null;
+  /** Remote machines (their own Vatra, reached over ssh). */
+  machines: import('./machines.js').MachineConfig[];
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -38,6 +40,7 @@ export const DEFAULT_CONFIG: Config = {
   contextWindow: 1_000_000,
   idleSleepMinutes: 30,
   language: 'auto',
+  machines: [],
 };
 
 export interface Paths {

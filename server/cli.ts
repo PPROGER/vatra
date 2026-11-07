@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
+import { Machines } from './machines.js';
 import { ensureDirs, getPaths, loadConfig, loadToken, resolveLanguage, saveConfig, type Config } from './config.js';
 import { openDb } from './db.js';
 import { isSupportedPlatform, loginShellPath, platform, resolveClaudeBin } from './platform.js';
@@ -125,7 +126,12 @@ async function start(dev: boolean, openUi = false) {
       await service.pollPrs();
     },
   };
-  const app = await buildApp({ service, hub, token, port: config.port, settings, webDir: dev ? null : webDir, dev, info, subscribe });
+  const machines = new Machines(emit, (list) => {
+    config.machines = list;
+    saveConfig(paths, { machines: list });
+  });
+  machines.load(config.machines ?? []);
+  const app = await buildApp({ service, hub, token, port: config.port, settings, webDir: dev ? null : webDir, dev, info, subscribe, machines });
   try {
     await app.listen({ host: '127.0.0.1', port: config.port });
   } catch (err) {
@@ -165,6 +171,7 @@ async function start(dev: boolean, openUi = false) {
   const shutdown = async (sig: string) => {
     console.log(`\n${tr('{signal}: зупиняюсь. Агенти лишаються жити в tmux і підхопляться при наступному старті.', { signal: sig })}`);
     hub.closeAll();
+    machines.closeAll();
     chat.closeAll();
     await watcher.closeAll();
     await app.close();

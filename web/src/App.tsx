@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project, ServerEvent, ServerInfo, Task } from '../../server/shared/types';
-import { api, subscribeEvents, token } from './api';
+import { api, subscribeEvents, token, setMachine } from './api';
 import { NewProjectModal, ProjectSettingsModal } from './components/Modals';
 import { NewTask } from './components/NewTask';
 import { SettingsModal } from './components/Settings';
@@ -132,11 +132,14 @@ export function App() {
           setDiffTicks((d) => ({ ...d, [e.taskId]: (d[e.taskId] ?? 0) + 1 }));
           break;
         case 'notify':
+          // from a remote machine (its Vatra, while you look at this one): a click switches over
+          if (e.machine) toast('info', e.title, e.body);
           if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            const n = new Notification(e.title, { body: e.body, tag: `ld-${e.taskId}` });
+            const n = new Notification(e.title, { body: e.body, tag: `ld-${e.machine ?? ''}-${e.taskId}` });
             n.onclick = () => {
               window.focus();
-              select(e.taskId);
+              if (e.machine) setMachine(e.machine);
+              else select(e.taskId);
             };
           }
           break;
@@ -147,7 +150,7 @@ export function App() {
       setConnected(ok);
       if (ok) void loadAll();
     });
-  }, [loadAll, select]);
+  }, [loadAll, select, toast]);
 
   const [palette, setPalette] = useState(false);
 

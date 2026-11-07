@@ -1,4 +1,4 @@
-import type { ChatState, DiffMode, DiffResult, Project, QuestionAnswer, ServerEvent, ServerInfo, Session, SlashCommand, Task } from '../../server/shared/types';
+import type { ChatState, MachineInfo, DiffMode, DiffResult, Project, QuestionAnswer, ServerEvent, ServerInfo, Session, SlashCommand, Task } from '../../server/shared/types';
 
 export interface DirListing {
   path: string;
@@ -38,6 +38,31 @@ function readToken(): string {
 
 export const token = readToken();
 
+/** Remote machine whose Vatra this UI shows (null = this computer). Switching reloads the page. */
+export const machine: string | null = (() => {
+  try {
+    return localStorage.getItem('vatra-machine') || null;
+  } catch {
+    return null;
+  }
+})();
+
+export function setMachine(id: string | null) {
+  try {
+    if (id) localStorage.setItem('vatra-machine', id);
+    else localStorage.removeItem('vatra-machine');
+  } catch {
+    /* private mode */
+  }
+  location.reload();
+}
+
+/** Routes API/WS paths to the selected machine (through this server's /m/<id> proxy). */
+export function scoped(path: string): string {
+  if (!machine || path.startsWith('/api/machines')) return path;
+  return path.startsWith('/api/') || path.startsWith('/ws/') ? `/m/${machine}${path}` : path;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -48,7 +73,7 @@ export class ApiError extends Error {
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(scoped(path), {
     method,
     headers: { 'x-vatra-token': token, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -87,7 +112,7 @@ export const api = {
       commands: () => req<SlashCommand[]>('GET', `${base}/commands`),
       files: (q: string) => req<string[]>('GET', `${base}/files?q=${encodeURIComponent(q)}`),
       upload: async (file: File) => {
-        const res = await fetch(`${base}/uploads`, {
+        const res = await fetch(scoped(`${base}/uploads`), {
           method: 'POST',
           headers: { 'x-vatra-token': token, 'content-type': 'application/octet-stream', 'x-filename': encodeURIComponent(file.name || 'paste.png') },
           body: file,
@@ -96,14 +121,14 @@ export const api = {
         if (!res.ok) throw new ApiError(json?.error ?? res.statusText);
         return json as { name: string; path: string; size: number };
       },
-      fileUrl: (path: string) => `${base}/uploads/file?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`,
+      fileUrl: (path: string) => scoped(`${base}/uploads/file`) + `?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`,
     };
   },
   chat: (id: number) => req<ChatState>('GET', `/api/tasks/${id}/chat`),
   files: (id: number, q: string) => req<string[]>('GET', `/api/tasks/${id}/files?q=${encodeURIComponent(q)}`),
   commands: (id: number) => req<SlashCommand[]>('GET', `/api/tasks/${id}/commands`),
   upload: async (id: number, file: File) => {
-    const res = await fetch(`/api/tasks/${id}/uploads`, {
+    const res = await fetch(scoped(`/api/tasks/${id}/uploads`), {
       method: 'POST',
       headers: { 'x-vatra-token': token, 'content-type': 'application/octet-stream', 'x-filename': encodeURIComponent(file.name || 'paste.png') },
       body: file,
@@ -112,7 +137,7 @@ export const api = {
     if (!res.ok) throw new ApiError(json?.error ?? res.statusText);
     return json as { name: string; path: string; size: number };
   },
-  uploadUrl: (id: number, path: string) => `/api/tasks/${id}/uploads/file?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`,
+  uploadUrl: (id: number, path: string) => scoped(`/api/tasks/${id}/uploads/file`) + `?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`,
   fsList: (path?: string, hidden = false) => req<DirListing>('GET', `/api/fs/list?path=${encodeURIComponent(path ?? '')}${hidden ? '&hidden=1' : ''}`),
   fsRepos: () => req<{ name: string; path: string }[]>('GET', '/api/fs/repos'),
   fsInspect: (path: string) => req<RepoInspect>('GET', `/api/fs/inspect?path=${encodeURIComponent(path)}`),
@@ -128,12 +153,16 @@ export const api = {
   finish: (id: number, force = false) => req<{ task: Task; message: string; note: string }>('POST', `/api/tasks/${id}/finish`, { force }),
   pr: (id: number) => req<{ url: string | null; created: boolean; manual?: boolean; output: string; task: Task }>('POST', `/api/tasks/${id}/pr`),
   prCheck: (id: number) => req<Task>('POST', `/api/tasks/${id}/pr/check`),
+  machines: () => req<MachineInfo[]>('GET', '/api/machines'),
+  addMachine: (b: { name?: string; ssh: string; remotePort?: number }) => req<MachineInfo>('POST', '/api/machines', b),
+  removeMachine: (id: string) => req<{ ok: true }>('DELETE', `/api/machines/${encodeURIComponent(id)}`),
   open: (id: number, app: 'zed' | 'files' | 'terminal') => req<{ ok: true }>('POST', `/api/tasks/${id}/open`, { app }),
 };
 
 export function wsUrl(path: string): string {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${location.host}${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  const p = scoped(path);
+  return `${proto}://${location.host}${p}${p.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
 }
 
 /** All server events are re-broadcast here so any component can listen. */

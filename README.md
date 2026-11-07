@@ -85,6 +85,18 @@ Manual install from a clone: `corepack pnpm install && corepack pnpm build && no
 
 Agents live in tmux sessions (`tmux -L vatra ls`), so restarting the server doesn't kill them. If an agent renames its branch (e.g. because your CLAUDE.md asks for `feat/...` names), Vatra follows it. Vatra only ever deletes branches the task itself created.
 
+## Agents on a remote machine
+
+Agents can run on a server (more CPU, keeps working while your laptop sleeps) while you use Vatra on your laptop:
+
+1. On the server: install Vatra with `--service` (`curl -fsSL https://raw.githubusercontent.com/PPROGER/vatra/main/install.sh | bash -s -- --service`) and run `claude` → `/login` once.
+2. On the laptop: ⚙ Settings → **Remote machines** → enter `user@host` (or a Host alias from `~/.ssh/config`). Key-based SSH login is required; nothing is exposed to the network, Vatra opens an SSH tunnel to the server's own Vatra.
+3. Pick the machine in the selector at the top of the sidebar. Everything (projects, tasks, chat, terminal, diff) then works on that machine. Notifications from remote agents also reach you while you look at another machine.
+
+## Helper agents
+
+An agent can hand a self-contained side job to a helper: it runs `"$VATRA_HELPER" "instructions"` (every agent is told about it), a second claude starts on a snapshot of the task's worktree, and its final answer comes back into the original chat as a `[helper report …]` message. You can also start one from the ⋯ menu: **Review by a helper** asks for an independent review of the branch's changes. Helpers show up under their task in the sidebar; read-only ones are archived once they report.
+
 ## Using it from another device
 
 The server only listens on `127.0.0.1` on purpose: a terminal in the browser means running commands on that machine. To use Vatra running on another computer (a home Mac, a Linux box), forward the port over SSH:

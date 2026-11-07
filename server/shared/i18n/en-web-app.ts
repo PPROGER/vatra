@@ -1,5 +1,16 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_WEB_APP: Record<string, string> = {
+  "Віддалені машини": "Remote machines",
+  "Агенти можуть працювати на сервері, а Ватра — на ноуті. На сервері встанови Ватру й запусти її у фоні:": "Agents can run on a server while Vatra runs on your laptop. On the server, install Vatra and run it in the background:",
+  ", а там один раз зроби claude → /login. Підключення — через SSH-ключ (без пароля), назовні нічого не відкривається.": ", then run claude → /login there once. The connection uses your SSH key (no password); nothing is exposed to the network.",
+  "Прибрати машину {name}? Агенти на ній працюватимуть далі.": "Remove machine {name}? Its agents keep running there.",
+  "user@host або назва з ~/.ssh/config": "user@host or a Host alias from ~/.ssh/config",
+  "назва": "name",
+  "На якій машині працюють агенти": "Which machine the agents run on",
+  "Цей комп’ютер": "This computer",
+  "підключаюсь…": "connecting…",
+  "офлайн": "offline",
+  "Машина недоступна": "Machine unavailable",
   "Двічі клікни, щоб перейменувати": "Double-click to rename",
   "Перейменувати": "Rename",
   "Показати архів цього проєкту": "Show this project's archive",

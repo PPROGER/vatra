@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import type { Project, ServerInfo, Task } from '../../../server/shared/types';
+import { useEffect, useState } from 'react';
+import type { MachineInfo, Project, ServerInfo, Task } from '../../../server/shared/types';
 import { CLOSED_STATUSES, compareTasks } from '../../../server/shared/types';
-import { api } from '../api';
+import { api, machine, setMachine } from '../api';
 import { t } from '../i18n';
 import { cx, StatusDot, timeAgo } from './ui';
 
@@ -59,6 +59,23 @@ export function Sidebar({
   const live = tasks.filter((t) => t.status === 'running' || t.status === 'idle').length;
   const waiting = tasks.filter((t) => t.status === 'idle').length;
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
+
+  // remote machines: which Vatra this UI shows
+  const [machines, setMachines] = useState<MachineInfo[]>([]);
+  useEffect(() => {
+    const load = () =>
+      api
+        .machines()
+        .then((list) => {
+          setMachines(list);
+          if (machine && !list.some((m) => m.id === machine)) setMachine(null); // it was removed
+        })
+        .catch(() => {});
+    load();
+    const id = window.setInterval(load, 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const current = machines.find((m) => m.id === machine);
 
   // inline rename and drag-to-reorder (open tasks, within one project)
   const [editing, setEditing] = useState<number | null>(null);
@@ -216,6 +233,26 @@ export function Sidebar({
           title={connected ? t('Підключено') : t('Немає звʼязку з сервером')}
         />
       </div>
+
+      {(machines.length > 0 || machine) && (
+        <div className="px-3 pt-2.5">
+          <select
+            className="w-full h-7 rounded-md border border-line-2 bg-panel-2 px-2 text-[12px] text-fg cursor-pointer"
+            value={machine ?? ''}
+            onChange={(e) => setMachine(e.target.value || null)}
+            title={current?.error ?? t('На якій машині працюють агенти')}
+          >
+            <option value="">💻 {t('Цей комп’ютер')}</option>
+            {machines.map((m) => (
+              <option key={m.id} value={m.id} disabled={m.state !== 'online' && m.id !== machine}>
+                🖥 {m.name}
+                {m.state === 'online' ? '' : m.state === 'connecting' ? ` · ${t('підключаюсь…')}` : ` · ${t('офлайн')}`}
+              </option>
+            ))}
+          </select>
+          {machine && current && current.state !== 'online' && <div className="mt-1 text-[11px] text-red-300/90 leading-snug">{current.error ?? t('Машина недоступна')}</div>}
+        </div>
+      )}
 
       {projects.length > 0 && (
         <div className="px-3 pt-3">

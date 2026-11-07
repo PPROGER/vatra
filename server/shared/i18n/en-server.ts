@@ -1,5 +1,8 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 export const EN_SERVER: Record<string, string> = {
+  "Вкажи адресу SSH: user@host або назву з ~/.ssh/config": "Enter an SSH address: user@host or a Host alias from ~/.ssh/config",
+  "Машину не знайдено": "Machine not found",
+  "Машина {name} недоступна: {error}": "Machine {name} is unavailable: {error}",
   "Рев'ю: {title}": "Review: {title}",
   "Помічник не може запускати своїх помічників": "A helper can't start helpers of its own",
   "Напиши, що має зробити помічник": "Write what the helper should do",

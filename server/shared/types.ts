@@ -79,6 +79,16 @@ export function compareTasks(a: Pick<Task, 'id' | 'position'>, b: Pick<Task, 'id
   return a.position - b.position || b.id - a.id;
 }
 
+/** A remote machine whose Vatra this one shows (over an ssh tunnel). */
+export interface MachineInfo {
+  id: string;
+  name: string;
+  ssh: string | null;
+  state: 'connecting' | 'online' | 'offline';
+  error: string | null;
+  version: string | null;
+}
+
 export interface Session {
   id: number;
   taskId: number;
@@ -109,10 +119,12 @@ export type ServerEvent =
   | { type: 'project'; project: Project }
   | { type: 'project_removed'; projectId: number }
   | { type: 'diff_changed'; taskId: number }
-  | { type: 'notify'; taskId: number; title: string; body: string }
+  | { type: 'notify'; taskId: number; title: string; body: string; /** set when it comes from a remote machine */ machine?: string }
   | { type: 'chat'; taskId: number; items: ChatItem[]; context: ChatContext | null }
   | { type: 'chat_reset'; taskId: number }
-  | { type: 'chat_meta'; taskId: number; permission: ChatState['permission']; activity: string | null };
+  | { type: 'chat_meta'; taskId: number; permission: ChatState['permission']; activity: string | null }
+  | { type: 'machine'; machine: MachineInfo }
+  | { type: 'machine_removed'; id: string };
 
 export interface ServerInfo {
   version: string;
