@@ -15,11 +15,16 @@ export function TaskView({
   project,
   diffTick,
   toast,
+  helpers = [],
+  onSelect,
 }: {
   task: Task;
   project: Project | undefined;
   diffTick: number;
   toast: (kind: 'error' | 'info' | 'success', title: string, body?: string) => void;
+  /** Helper agents started by this task. */
+  helpers?: Task[];
+  onSelect?: (taskId: number) => void;
 }) {
   const [tab, setTab] = useState<Tab>(() => {
     try {
@@ -138,10 +143,14 @@ export function TaskView({
             <EditableTitle task={task} onError={(m) => toast('error', t('Не вдалося перейменувати'), m)} />
             <StatusBadge status={task.status} />
             {task.parentId && (
-              <span className="text-[11px] rounded border border-line-2 px-1.5 text-muted" title={t('Його фінальна відповідь піде в чат батьківської задачі')}>
+              <button
+                className="text-[11px] rounded border border-line-2 px-1.5 text-muted hover:text-fg hover:border-accent/60 cursor-pointer"
+                title={t('Його фінальна відповідь піде в чат батьківської задачі')}
+                onClick={() => onSelect?.(task.parentId!)}
+              >
                 ↳ {t('помічник задачі #{id}', { id: task.parentId })}
                 {task.helperState === 'reported' ? ` · ${t('звіт передано')}` : ''}
-              </span>
+              </button>
             )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-muted font-mono">
@@ -315,7 +324,7 @@ export function TaskView({
       {/* body */}
       <div className={cx('flex-1 min-h-0', tab === 'split' ? 'grid grid-cols-2 divide-x divide-line' : 'flex')}>
         <div className={cx('min-w-0 min-h-0 h-full', showChat ? 'flex-1' : 'hidden')}>
-          <Chat task={task} onOpenTerminal={() => setTab('terminal')} toast={toast} />
+          <Chat task={task} onOpenTerminal={() => setTab('terminal')} toast={toast} helpers={helpers} onSelect={onSelect} />
         </div>
         <div className={cx('min-w-0 min-h-0 h-full', showTerm ? 'flex-1' : 'hidden')}>
           {task.alive ? (

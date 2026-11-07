@@ -4,10 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChatItem, ChatState, Task } from '../../../server/shared/types';
 import { CLOSED_STATUSES } from '../../../server/shared/types';
 import { api, onServerEvent } from '../api';
-import { AssistantText, QuestionCard, splitAttachments, SystemLine, Thinking, ToolGroup, UserBubble, withAttachments, type Delivery } from './ChatItems';
+import { AssistantText, HELPER_REPORT_RE, HelperReport, QuestionCard, splitAttachments, SystemLine, Thinking, ToolGroup, UserBubble, withAttachments, type Delivery } from './ChatItems';
 import { Composer, type Attachment, type ComposerHandle } from './Composer';
 import { t } from '../i18n';
-import { Button, cx } from './ui';
+import { Button, cx, StatusDot } from './ui';
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
 
@@ -31,10 +31,14 @@ export function Chat({
   task,
   onOpenTerminal,
   toast,
+  helpers = [],
+  onSelect,
 }: {
   task: Task;
   onOpenTerminal: () => void;
   toast: (kind: 'error' | 'info' | 'success', title: string, body?: string) => void;
+  helpers?: Task[];
+  onSelect?: (taskId: number) => void;
 }) {
   const [state, setState] = useState<ChatState | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -272,7 +276,11 @@ export function Chat({
             b.type === 'tools' ? (
               <ToolGroup key={b.items[0].id} items={b.items} root={task.worktreePath} />
             ) : b.item.kind === 'user' ? (
-              <UserBubble key={b.item.id} taskId={taskId} text={b.item.text} ts={b.item.ts} command={b.item.command} bash={b.item.bash} delivery={answered.has(b.item.id) ? 'answered' : 'delivered'} />
+              HELPER_REPORT_RE.test(b.item.text) ? (
+                <HelperReport key={b.item.id} text={b.item.text} onOpen={onSelect} />
+              ) : (
+                <UserBubble key={b.item.id} taskId={taskId} text={b.item.text} ts={b.item.ts} command={b.item.command} bash={b.item.bash} delivery={answered.has(b.item.id) ? 'answered' : 'delivered'} />
+              )
             ) : b.item.kind === 'assistant' ? (
               <AssistantText key={b.item.id} text={b.item.text} />
             ) : b.item.kind === 'thinking' ? (
@@ -360,6 +368,29 @@ export function Chat({
                 {t('Показати в терміналі')}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* helper agents working for this task */}
+      {helpers.some((h) => !CLOSED_STATUSES.includes(h.status)) && (
+        <div className="mx-auto w-full max-w-4xl px-5 pb-2">
+          <div className="rounded-xl border border-line bg-panel/60 px-3 py-2 space-y-1">
+            {helpers
+              .filter((h) => !CLOSED_STATUSES.includes(h.status))
+              .map((h) => (
+                <div key={h.id} className="flex items-center gap-2 text-[12.5px]">
+                  <StatusDot status={h.status} />
+                  <span className="text-faint font-mono">#{h.id}</span>
+                  <span className="truncate text-muted">{h.title}</span>
+                  <span className="shrink-0 text-faint text-[11.5px]">
+                    {h.status === 'running' ? t('працює…') : h.status === 'creating' || h.status === 'queued' ? t('стартує…') : h.helperState === 'reported' ? t('звіт передано') : t('чекає')}
+                  </span>
+                  <button className="ml-auto shrink-0 text-[12px] text-accent hover:underline cursor-pointer" onClick={() => onSelect?.(h.id)}>
+                    {t('дивитись')} →
+                  </button>
+                </div>
+              ))}
           </div>
         </div>
       )}

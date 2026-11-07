@@ -1253,9 +1253,10 @@ console.log('Helper #' + out.id + ' started ("' + out.title + '"). Its report wi
     if (!h.parentId || h.helperState !== 'working') return;
     this.d.db.update(tasks).set({ helperState: 'reported' }).where(eq(tasks.id, helperId)).run();
     const items = this.chatState(helperId).items;
+    // only the final answer: text after the last tool call / message (no "Reading X…" narration)
     let lastUser = -1;
     items.forEach((it, i) => {
-      if (it.kind === 'user') lastUser = i;
+      if (it.kind === 'user' || it.kind === 'tool') lastUser = i;
     });
     const answer = items
       .slice(lastUser + 1)

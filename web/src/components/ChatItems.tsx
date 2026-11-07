@@ -362,3 +362,27 @@ export function QuestionCard({ item, live, onAnswer }: { item: ToolItem; live: b
     </div>
   );
 }
+
+/** "[helper report — #12 «title»]\n…" — the answer of a helper agent, typed into this chat by Vatra. */
+export const HELPER_REPORT_RE = /^\[helper report — #(\d+) «([^\n]*)»\]\n?/;
+
+export function HelperReport({ text, onOpen }: { text: string; onOpen?: (taskId: number) => void }) {
+  const m = text.match(HELPER_REPORT_RE);
+  const id = m ? Number(m[1]) : null;
+  const body = m ? text.slice(m[0].length) : text;
+  return (
+    <div className="max-w-[92%] rounded-xl border border-accent/40 bg-accent/5 px-4 py-3">
+      <div className="flex items-center gap-2 mb-1.5 text-[12px]">
+        <span className="font-medium text-accent">🤝 {t('Звіт помічника')}</span>
+        {id && <span className="font-mono text-faint">#{id}</span>}
+        <span className="truncate text-muted">{m?.[2]}</span>
+        {id && onOpen && (
+          <button className="ml-auto shrink-0 text-accent hover:underline cursor-pointer" onClick={() => onOpen(id)}>
+            {t('відкрити чат помічника')} →
+          </button>
+        )}
+      </div>
+      <AssistantText text={body} />
+    </div>
+  );
+}

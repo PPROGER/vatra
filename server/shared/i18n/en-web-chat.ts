@@ -1,6 +1,11 @@
 // English translations: Ukrainian source text (the key) → English. Placeholders: {name}.
 // Covers web/src/components: TaskView, Chat, ChatItems, Composer, Terminal.
 export const EN_WEB_CHAT: Record<string, string> = {
+  "працює…": "working…",
+  "стартує…": "starting…",
+  "дивитись": "open",
+  "Звіт помічника": "Helper report",
+  "відкрити чат помічника": "open the helper's chat",
   "Його фінальна відповідь піде в чат батьківської задачі": "Its final answer goes to the parent task's chat",
   "помічник задачі #{id}": "helper of task #{id}",
   "звіт передано": "report sent",

@@ -214,7 +214,15 @@ export function App() {
       />
       <main className="flex-1 min-w-0">
         {task ? (
-          <TaskView key={task.id} task={task} project={projects.find((p) => p.id === task.projectId)} diffTick={diffTicks[task.id] ?? 0} toast={toast} />
+          <TaskView
+            key={task.id}
+            task={task}
+            project={projects.find((p) => p.id === task.projectId)}
+            diffTick={diffTicks[task.id] ?? 0}
+            toast={toast}
+            helpers={tasks.filter((x) => x.parentId === task.id)}
+            onSelect={select}
+          />
         ) : projects.length > 0 ? (
           <NewTask
             projects={projects}
